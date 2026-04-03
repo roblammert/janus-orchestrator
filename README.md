@@ -61,20 +61,31 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 
 ## API Endpoints
 
+All API responses now use a standard envelope:
+
+- Success: `{ "success": true, "data": ..., "meta": { ... } }`
+- Error: `{ "success": false, "error": { "code", "message", "details" }, "meta": { "request_id" } }`
+
 - `POST /api/workflows` create immutable workflow version
-- `GET /api/workflows` list workflows by name with latest version
+- `GET /api/workflows` list workflows (supports `search`, `sort`, `page`, `page_size`)
 - `GET /api/workflows/{id}` get workflow version by id
 - `GET /api/workflows/by-name/{name}` list versions for one workflow name
 - `POST /api/executions` start execution for workflow id
-- `GET /api/executions` list executions
+- `GET /api/executions` list executions (supports `status`, `workflow`, `started_after`, `started_before`, `sort`, `page`, `page_size`)
 - `GET /api/executions/{id}` execution details (tasks included)
+- `GET /api/executions/{id}/dag` execution DAG summary with runtime node states
+- `GET /api/executions/{id}/events` execution/task state transition deltas (supports `since_id`, `limit`)
 - `POST /api/executions/{id}/cancel` cancel execution
+- `GET /api/tasks` list tasks (supports `status`, `node_key`, `execution_id`, `sort`, `page`, `page_size`)
 - `POST /api/tasks/{id}/retry` manual retry
 - `POST /api/tasks/{id}/skip` manual skip
 - `POST /api/tasks/{id}/complete` manual complete with output
-- `GET /api/tasks/{id}/logs` per-task logs
+- `GET /api/tasks/{id}/logs` per-task logs (supports `level`, `cursor`, `limit`)
+- `GET /api/dead-letters` list dead-letter tasks
+- `GET /api/dead-letters/{id}` get dead-letter task detail
 - `GET /api/metrics/overview` metrics from SQL views
 - `GET /api/health/services` service health summary (web/api/db/fastapi/scheduler/worker)
+- `GET /api/meta/shell` app metadata and capability flags for UI shell
 
 UI routes:
 

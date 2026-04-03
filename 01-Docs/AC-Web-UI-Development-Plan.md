@@ -121,17 +121,17 @@ Definition of done:
 - No blocking operations depend on browser prompt dialogs.
 
 ### Phase 3 - API Hardening and Contract Completion (UI-Driven)
-- [ ] Standardize response envelope and error format across all endpoints.
-- [ ] Add request validation error structure with field-level details.
-- [ ] Add pagination parameters and metadata for list endpoints.
-- [ ] Add filtering and sorting support:
+- [x] Standardize response envelope and error format across all endpoints.
+- [x] Add request validation error structure with field-level details.
+- [x] Add pagination parameters and metadata for list endpoints.
+- [x] Add filtering and sorting support:
   - executions by status/time/workflow
   - tasks by status/node/execution
   - task logs by level/time cursor
-- [ ] Add endpoint for dead-letter listing and details.
-- [ ] Add endpoint for workflow DAG summary per execution (nodes/edges + runtime state).
-- [ ] Add endpoint for execution event stream or poll-optimized deltas.
-- [ ] Add endpoint for app shell metadata:
+- [x] Add endpoint for dead-letter listing and details.
+- [x] Add endpoint for workflow DAG summary per execution (nodes/edges + runtime state).
+- [x] Add endpoint for execution event stream or poll-optimized deltas.
+- [x] Add endpoint for app shell metadata:
   - app version
   - environment label
   - capabilities flags

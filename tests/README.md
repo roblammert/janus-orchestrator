@@ -23,6 +23,7 @@ Prerequisites:
 
 1. Janus API is running (default `http://127.0.0.1:8811`).
 2. Your external MySQL server is reachable by the running app.
+3. Bootstrap/admin login credentials are available (default `admin` / `admin123`).
 
 Run:
 
@@ -36,6 +37,8 @@ JANUS_BASE_URL=http://127.0.0.1:8811 pytest tests/python/test_api_integration_sm
 Optional:
 
 - `JANUS_API_TIMEOUT_SECONDS` (default `10`)
+- `JANUS_AUTH_USERNAME` (default `admin`)
+- `JANUS_AUTH_PASSWORD` (default `admin123`)
 
 ## API smoke checks (manual)
 

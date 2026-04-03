@@ -88,13 +88,80 @@ final class ExecutionService
 
     public function listExecutions(): array
     {
-        $stmt = $this->pdo->query(
-            'SELECT id, workflow_name, workflow_version, status, created_at, started_at, finished_at
-             FROM executions
-             ORDER BY id DESC'
-        );
+        $result = $this->listExecutionsPage();
+        return $result['items'];
+    }
 
-        return $stmt->fetchAll();
+    public function listExecutionsPage(
+        int $page = 1,
+        int $pageSize = 50,
+        string $status = '',
+        string $workflow = '',
+        string $startedAfter = '',
+        string $startedBefore = '',
+        string $sort = 'id_desc'
+    ): array {
+        $page = max(1, $page);
+        $pageSize = min(200, max(1, $pageSize));
+        $offset = ($page - 1) * $pageSize;
+
+        $filters = [];
+        $params = [];
+
+        if ($status !== '') {
+            $filters[] = 'status = :status';
+            $params['status'] = $status;
+        }
+
+        if ($workflow !== '') {
+            $filters[] = 'workflow_name LIKE :workflow';
+            $params['workflow'] = '%' . $workflow . '%';
+        }
+
+        if ($startedAfter !== '') {
+            $filters[] = 'started_at >= :started_after';
+            $params['started_after'] = $startedAfter;
+        }
+
+        if ($startedBefore !== '') {
+            $filters[] = 'started_at <= :started_before';
+            $params['started_before'] = $startedBefore;
+        }
+
+        $where = $filters === [] ? '' : ('WHERE ' . implode(' AND ', $filters));
+        $orderBy = match ($sort) {
+            'id_asc' => 'id ASC',
+            'started_asc' => 'started_at ASC, id ASC',
+            'started_desc' => 'started_at DESC, id DESC',
+            default => 'id DESC',
+        };
+
+        $countStmt = $this->pdo->prepare('SELECT COUNT(*) FROM executions ' . $where);
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $sql =
+            'SELECT id, workflow_name, workflow_version, status, created_at, started_at, finished_at
+             FROM executions ' . $where . '
+             ORDER BY ' . $orderBy . '
+             LIMIT :limit OFFSET :offset';
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'items' => $stmt->fetchAll(),
+            'pagination' => [
+                'page' => $page,
+                'page_size' => $pageSize,
+                'total' => $total,
+                'has_next' => ($offset + $pageSize) < $total,
+            ],
+        ];
     }
 
     public function getExecutionDetails(int $executionId): ?array
@@ -160,6 +227,63 @@ final class ExecutionService
             'edges' => $dagEdges,
         ];
         return $execution;
+    }
+
+    public function executionDagSummary(int $executionId): ?array
+    {
+        $execution = $this->getExecutionDetails($executionId);
+        if ($execution === null) {
+            return null;
+        }
+
+        return [
+            'execution_id' => (int)$execution['id'],
+            'workflow_name' => (string)$execution['workflow_name'],
+            'workflow_version' => (int)$execution['workflow_version'],
+            'nodes' => $execution['dag']['nodes'] ?? [],
+            'edges' => $execution['dag']['edges'] ?? [],
+        ];
+    }
+
+    public function executionEventsDelta(int $executionId, int $sinceId = 0, int $limit = 200): array
+    {
+        $limit = min(500, max(1, $limit));
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, entity_type, entity_id, from_state, to_state, metadata_json, created_at
+             FROM state_transitions
+             WHERE id > :since_id
+               AND (
+                                        (entity_type = "execution" AND entity_id = :execution_id_1)
+                    OR (
+                        entity_type = "task"
+                                                AND entity_id IN (SELECT id FROM tasks WHERE execution_id = :execution_id_2)
+                    )
+               )
+             ORDER BY id ASC
+             LIMIT :limit'
+        );
+        $stmt->bindValue(':since_id', max(0, $sinceId), PDO::PARAM_INT);
+                $stmt->bindValue(':execution_id_1', $executionId, PDO::PARAM_INT);
+                $stmt->bindValue(':execution_id_2', $executionId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $items = $stmt->fetchAll();
+        foreach ($items as &$item) {
+            $item['metadata_json'] = json_decode((string)$item['metadata_json'], true);
+        }
+
+        $nextSinceId = $sinceId;
+        if ($items !== []) {
+            $last = end($items);
+            $nextSinceId = (int)($last['id'] ?? $sinceId);
+        }
+
+        return [
+            'items' => $items,
+            'next_since_id' => $nextSinceId,
+        ];
     }
 
     public function cancelExecution(int $executionId): void

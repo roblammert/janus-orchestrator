@@ -98,18 +98,118 @@ final class TaskService
 
     public function listTaskLogs(int $taskId): array
     {
-        $stmt = $this->pdo->prepare(
+        $result = $this->listTaskLogsPage($taskId);
+        return $result['items'];
+    }
+
+    public function listTaskLogsPage(
+        int $taskId,
+        string $level = '',
+        int $cursor = 0,
+        int $limit = 200
+    ): array {
+        $limit = min(500, max(1, $limit));
+        $sql =
             'SELECT id, level, message, metadata_json, created_at
              FROM task_logs
-             WHERE task_id = :task_id
-             ORDER BY id ASC'
-        );
-        $stmt->execute(['task_id' => $taskId]);
+             WHERE task_id = :task_id AND id > :cursor';
+        if ($level !== '') {
+            $sql .= ' AND level = :level';
+        }
+        $sql .= ' ORDER BY id ASC LIMIT :limit';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':task_id', $taskId, PDO::PARAM_INT);
+        $stmt->bindValue(':cursor', max(0, $cursor), PDO::PARAM_INT);
+        if ($level !== '') {
+            $stmt->bindValue(':level', $level);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
         $rows = $stmt->fetchAll();
 
         foreach ($rows as &$row) {
             $row['metadata_json'] = json_decode((string)$row['metadata_json'], true);
         }
+
+        $nextCursor = $cursor;
+        if ($rows !== []) {
+            $last = end($rows);
+            $nextCursor = (int)($last['id'] ?? $cursor);
+        }
+
+        return [
+            'items' => $rows,
+            'next_cursor' => $nextCursor,
+        ];
+    }
+
+    public function listTasksPage(
+        int $page = 1,
+        int $pageSize = 50,
+        string $status = '',
+        string $nodeKey = '',
+        int $executionId = 0,
+        string $sort = 'id_desc'
+    ): array {
+        $page = max(1, $page);
+        $pageSize = min(200, max(1, $pageSize));
+        $offset = ($page - 1) * $pageSize;
+
+        $filters = [];
+        $params = [];
+
+        if ($status !== '') {
+            $filters[] = 't.status = :status';
+            $params['status'] = $status;
+        }
+
+        if ($nodeKey !== '') {
+            $filters[] = 't.node_key LIKE :node_key';
+            $params['node_key'] = '%' . $nodeKey . '%';
+        }
+
+        if ($executionId > 0) {
+            $filters[] = 't.execution_id = :execution_id';
+            $params['execution_id'] = $executionId;
+        }
+
+        $where = $filters === [] ? '' : ('WHERE ' . implode(' AND ', $filters));
+        $orderBy = match ($sort) {
+            'id_asc' => 't.id ASC',
+            'scheduled_asc' => 't.scheduled_at ASC, t.id ASC',
+            'scheduled_desc' => 't.scheduled_at DESC, t.id DESC',
+            default => 't.id DESC',
+        };
+
+        $countStmt = $this->pdo->prepare('SELECT COUNT(*) FROM tasks t ' . $where);
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $sql =
+            'SELECT t.id, t.execution_id, t.node_key, t.status, t.attempts, t.max_attempts, t.scheduled_at,
+                    t.started_at, t.finished_at, t.last_error, t.updated_at
+             FROM tasks t ' . $where . '
+             ORDER BY ' . $orderBy . '
+             LIMIT :limit OFFSET :offset';
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $paramType = $key === 'execution_id' ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue(':' . $key, $value, $paramType);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'items' => $stmt->fetchAll(),
+            'pagination' => [
+                'page' => $page,
+                'page_size' => $pageSize,
+                'total' => $total,
+                'has_next' => ($offset + $pageSize) < $total,
+            ],
+        ];
 
         return $rows;
     }

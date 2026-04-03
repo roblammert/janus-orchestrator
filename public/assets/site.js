@@ -130,10 +130,18 @@
       data = { raw: text };
     }
 
-    if (!response.ok) {
-      const errorMessage = data.error || `Request failed (${response.status})`;
+    const isEnvelope = typeof data === 'object' && data !== null && Object.prototype.hasOwnProperty.call(data, 'success');
+
+    if (!response.ok || (isEnvelope && data.success === false)) {
+      const errorMessage = isEnvelope
+        ? (data.error?.message || `Request failed (${response.status})`)
+        : (data.error || `Request failed (${response.status})`);
       showToast(errorMessage, 'error');
       throw new Error(errorMessage);
+    }
+
+    if (isEnvelope) {
+      return data.data;
     }
 
     return data;

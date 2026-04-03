@@ -16,9 +16,21 @@ final class WorkflowService
     {
         $name = (string)($payload['name'] ?? '');
         $definition = $payload['definition'] ?? null;
+        $fieldErrors = [];
 
-        if ($name === '' || !is_array($definition)) {
-            throw new \InvalidArgumentException('name and definition are required');
+        if ($name === '') {
+            $fieldErrors[] = ['field' => 'name', 'message' => 'name is required'];
+        }
+        if (!is_array($definition)) {
+            $fieldErrors[] = ['field' => 'definition', 'message' => 'definition must be a JSON object'];
+        }
+
+        if (is_array($definition)) {
+            $fieldErrors = array_merge($fieldErrors, $this->validateDefinition($definition));
+        }
+
+        if ($fieldErrors !== []) {
+            throw new ValidationException('Invalid workflow payload', $fieldErrors);
         }
 
         $this->pdo->beginTransaction();
@@ -91,14 +103,62 @@ final class WorkflowService
 
     public function listWorkflows(): array
     {
-        $stmt = $this->pdo->query(
-            'SELECT name, MAX(version) AS latest_version, COUNT(*) AS versions_count
-             FROM workflows
-             GROUP BY name
-             ORDER BY name ASC'
-        );
+        $result = $this->listWorkflowsPage();
+        return $result['items'];
+    }
 
-        return $stmt->fetchAll();
+    public function listWorkflowsPage(
+        string $search = '',
+        string $sort = 'name_asc',
+        int $page = 1,
+        int $pageSize = 50
+    ): array {
+        $page = max(1, $page);
+        $pageSize = min(200, max(1, $pageSize));
+        $offset = ($page - 1) * $pageSize;
+
+        $where = '';
+        $params = [];
+        if ($search !== '') {
+            $where = 'WHERE name LIKE :search';
+            $params['search'] = '%' . $search . '%';
+        }
+
+        $orderBy = match ($sort) {
+            'name_desc' => 'name DESC',
+            'latest_version_desc' => 'latest_version DESC, name ASC',
+            'versions_count_desc' => 'versions_count DESC, name ASC',
+            default => 'name ASC',
+        };
+
+        $countSql = 'SELECT COUNT(*) FROM (SELECT name FROM workflows ' . $where . ' GROUP BY name) x';
+        $countStmt = $this->pdo->prepare($countSql);
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $sql =
+            'SELECT name, MAX(version) AS latest_version, COUNT(*) AS versions_count
+             FROM workflows ' . $where . '
+             GROUP BY name
+             ORDER BY ' . $orderBy . '
+             LIMIT :limit OFFSET :offset';
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'items' => $stmt->fetchAll(),
+            'pagination' => [
+                'page' => $page,
+                'page_size' => $pageSize,
+                'total' => $total,
+                'has_next' => ($offset + $pageSize) < $total,
+            ],
+        ];
     }
 
     public function listWorkflowVersions(string $name): array
@@ -135,5 +195,59 @@ final class WorkflowService
 
         $row['definition_json'] = json_decode((string)$row['definition_json'], true);
         return $row;
+    }
+
+    private function validateDefinition(array $definition): array
+    {
+        $errors = [];
+        $nodes = $definition['nodes'] ?? null;
+        if (!is_array($nodes) || $nodes === []) {
+            $errors[] = ['field' => 'definition.nodes', 'message' => 'nodes must be a non-empty array'];
+            return $errors;
+        }
+
+        $keys = [];
+        foreach ($nodes as $idx => $node) {
+            if (!is_array($node)) {
+                $errors[] = ['field' => "definition.nodes[$idx]", 'message' => 'node must be an object'];
+                continue;
+            }
+
+            $key = trim((string)($node['key'] ?? ''));
+            $type = trim((string)($node['type'] ?? ''));
+            if ($key === '') {
+                $errors[] = ['field' => "definition.nodes[$idx].key", 'message' => 'key is required'];
+            } elseif (isset($keys[$key])) {
+                $errors[] = ['field' => "definition.nodes[$idx].key", 'message' => 'duplicate key'];
+            } else {
+                $keys[$key] = true;
+            }
+
+            if (!in_array($type, ['HTTP', 'SCRIPT', 'FILE_WRITER'], true)) {
+                $errors[] = ['field' => "definition.nodes[$idx].type", 'message' => 'type must be HTTP, SCRIPT, or FILE_WRITER'];
+            }
+        }
+
+        $edges = $definition['edges'] ?? [];
+        if (!is_array($edges)) {
+            $errors[] = ['field' => 'definition.edges', 'message' => 'edges must be an array'];
+            return $errors;
+        }
+
+        foreach ($edges as $idx => $edge) {
+            if (!is_array($edge)) {
+                $errors[] = ['field' => "definition.edges[$idx]", 'message' => 'edge must be an object'];
+                continue;
+            }
+            $from = (string)($edge['from'] ?? '');
+            $to = (string)($edge['to'] ?? '');
+            if ($from === '' || $to === '') {
+                $errors[] = ['field' => "definition.edges[$idx]", 'message' => 'from and to are required'];
+            } elseif (!isset($keys[$from]) || !isset($keys[$to])) {
+                $errors[] = ['field' => "definition.edges[$idx]", 'message' => 'edge references unknown node key'];
+            }
+        }
+
+        return $errors;
     }
 }

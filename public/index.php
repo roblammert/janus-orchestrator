@@ -116,14 +116,19 @@ try {
     }
 
     if ($method === 'GET' && $path === '/api/workflows') {
-        Http::json($workflowService->listWorkflows());
+        $search = trim((string)($_GET['search'] ?? ''));
+        $sort = trim((string)($_GET['sort'] ?? 'name_asc'));
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $pageSize = max(1, (int)($_GET['page_size'] ?? 50));
+        $result = $workflowService->listWorkflowsPage($search, $sort, $page, $pageSize);
+        Http::success($result['items'], 200, ['pagination' => $result['pagination']]);
         exit;
     }
 
     if ($method === 'POST' && $path === '/api/workflows') {
         $body = Http::bodyJson();
         $result = $workflowService->createWorkflowVersion($body);
-        Http::json($result, 201);
+        Http::success($result, 201);
         exit;
     }
 
@@ -134,12 +139,12 @@ try {
             exit;
         }
 
-        Http::json($workflow);
+        Http::success($workflow);
         exit;
     }
 
     if ($method === 'GET' && preg_match('#^/api/workflows/by-name/(.+)$#', $path, $m) === 1) {
-        Http::json($workflowService->listWorkflowVersions(urldecode($m[1])));
+        Http::success($workflowService->listWorkflowVersions(urldecode($m[1])));
         exit;
     }
 
@@ -147,13 +152,27 @@ try {
         $body = Http::bodyJson();
         $workflowId = (int)($body['workflow_id'] ?? 0);
         $input = is_array($body['input'] ?? null) ? $body['input'] : [];
+        if ($workflowId <= 0) {
+            throw new Janus\ValidationException('Invalid execution payload', [
+                ['field' => 'workflow_id', 'message' => 'workflow_id must be a positive integer'],
+            ]);
+        }
+
         $result = $executionService->startExecution($workflowId, $input);
-        Http::json($result, 201);
+        Http::success($result, 201);
         exit;
     }
 
     if ($method === 'GET' && $path === '/api/executions') {
-        Http::json($executionService->listExecutions());
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $pageSize = max(1, (int)($_GET['page_size'] ?? 50));
+        $status = trim((string)($_GET['status'] ?? ''));
+        $workflow = trim((string)($_GET['workflow'] ?? ''));
+        $startedAfter = trim((string)($_GET['started_after'] ?? ''));
+        $startedBefore = trim((string)($_GET['started_before'] ?? ''));
+        $sort = trim((string)($_GET['sort'] ?? 'id_desc'));
+        $result = $executionService->listExecutionsPage($page, $pageSize, $status, $workflow, $startedAfter, $startedBefore, $sort);
+        Http::success($result['items'], 200, ['pagination' => $result['pagination']]);
         exit;
     }
 
@@ -164,26 +183,57 @@ try {
             exit;
         }
 
-        Http::json($execution);
+        Http::success($execution);
+        exit;
+    }
+
+    if ($method === 'GET' && preg_match('#^/api/executions/(\d+)/dag$#', $path, $m) === 1) {
+        $dag = $executionService->executionDagSummary((int)$m[1]);
+        if ($dag === null) {
+            Http::notFound();
+            exit;
+        }
+
+        Http::success($dag);
+        exit;
+    }
+
+    if ($method === 'GET' && preg_match('#^/api/executions/(\d+)/events$#', $path, $m) === 1) {
+        $sinceId = max(0, (int)($_GET['since_id'] ?? 0));
+        $limit = max(1, (int)($_GET['limit'] ?? 200));
+        $events = $executionService->executionEventsDelta((int)$m[1], $sinceId, $limit);
+        Http::success($events['items'], 200, ['next_since_id' => $events['next_since_id']]);
         exit;
     }
 
     if ($method === 'POST' && preg_match('#^/api/executions/(\d+)/cancel$#', $path, $m) === 1) {
         $executionService->cancelExecution((int)$m[1]);
-        Http::json(['ok' => true]);
+        Http::success(['ok' => true]);
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/api/tasks') {
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $pageSize = max(1, (int)($_GET['page_size'] ?? 50));
+        $status = trim((string)($_GET['status'] ?? ''));
+        $nodeKey = trim((string)($_GET['node_key'] ?? ''));
+        $executionId = max(0, (int)($_GET['execution_id'] ?? 0));
+        $sort = trim((string)($_GET['sort'] ?? 'id_desc'));
+        $result = $taskService->listTasksPage($page, $pageSize, $status, $nodeKey, $executionId, $sort);
+        Http::success($result['items'], 200, ['pagination' => $result['pagination']]);
         exit;
     }
 
     if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/retry$#', $path, $m) === 1) {
         $taskService->retryTask((int)$m[1]);
-        Http::json(['ok' => true]);
+        Http::success(['ok' => true]);
         exit;
     }
 
     if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/skip$#', $path, $m) === 1) {
         $body = Http::bodyJson();
         $taskService->skipTask((int)$m[1], (string)($body['reason'] ?? 'Skipped manually'));
-        Http::json(['ok' => true]);
+        Http::success(['ok' => true]);
         exit;
     }
 
@@ -191,17 +241,39 @@ try {
         $body = Http::bodyJson();
         $output = is_array($body['output'] ?? null) ? $body['output'] : [];
         $taskService->completeTaskManually((int)$m[1], $output);
-        Http::json(['ok' => true]);
+        Http::success(['ok' => true]);
         exit;
     }
 
     if ($method === 'GET' && preg_match('#^/api/tasks/(\d+)/logs$#', $path, $m) === 1) {
-        Http::json($taskService->listTaskLogs((int)$m[1]));
+        $level = trim((string)($_GET['level'] ?? ''));
+        $cursor = max(0, (int)($_GET['cursor'] ?? 0));
+        $limit = max(1, (int)($_GET['limit'] ?? 200));
+        $result = $taskService->listTaskLogsPage((int)$m[1], $level, $cursor, $limit);
+        Http::success($result['items'], 200, ['next_cursor' => $result['next_cursor']]);
         exit;
     }
 
     if ($method === 'GET' && $path === '/api/dead-letters') {
-        Http::json($taskService->listDeadLetters());
+        Http::success($taskService->listDeadLetters());
+        exit;
+    }
+
+    if ($method === 'GET' && preg_match('#^/api/dead-letters/(\d+)$#', $path, $m) === 1) {
+        $taskId = (int)$m[1];
+        $item = null;
+        foreach ($taskService->listDeadLetters() as $row) {
+            if ((int)($row['id'] ?? 0) === $taskId) {
+                $item = $row;
+                break;
+            }
+        }
+        if ($item === null) {
+            Http::notFound();
+            exit;
+        }
+
+        Http::success($item);
         exit;
     }
 
@@ -210,23 +282,45 @@ try {
         $note = (string)($body['note'] ?? '');
         $actorUserId = is_array($user) ? (int)($user['id'] ?? 0) : 0;
         $taskService->annotateTask((int)$m[1], $note, $actorUserId > 0 ? $actorUserId : null);
-        Http::json(['ok' => true]);
+        Http::success(['ok' => true]);
         exit;
     }
 
     if ($method === 'GET' && $path === '/api/metrics/overview') {
-        Http::json($executionService->metricsOverview());
+        Http::success($executionService->metricsOverview());
         exit;
     }
 
     if ($method === 'GET' && $path === '/api/health/services') {
-        Http::json($systemService->healthSummary());
+        Http::success($systemService->healthSummary());
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/api/meta/shell') {
+        Http::success([
+            'app_version' => Janus\Config::appVersion(),
+            'environment' => Janus\Config::appEnvironment(),
+            'capabilities' => [
+                'dead_letters' => true,
+                'observability' => true,
+                'execution_dag' => true,
+                'execution_events' => true,
+                'task_logs_cursor' => true,
+                'theme_dark' => true,
+            ],
+        ]);
         exit;
     }
 
     Http::notFound();
+} catch (Janus\ValidationException $e) {
+    Http::error($e->getMessage(), $e->errorCode(), $e->statusCode(), $e->details());
+} catch (Janus\ApiException $e) {
+    Http::error($e->getMessage(), $e->errorCode(), $e->statusCode(), $e->details());
+} catch (InvalidArgumentException $e) {
+    Http::error($e->getMessage(), 'INVALID_ARGUMENT', 400);
+} catch (RuntimeException $e) {
+    Http::error($e->getMessage(), 'RUNTIME_ERROR', 409);
 } catch (Throwable $e) {
-    Http::json([
-        'error' => $e->getMessage(),
-    ], 400);
+    Http::error('Internal server error', 'INTERNAL_ERROR', 500);
 }

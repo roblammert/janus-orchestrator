@@ -2,12 +2,32 @@ import json
 import os
 import time
 import uuid
+import http.cookiejar
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
 BASE_URL = os.getenv("JANUS_BASE_URL", "http://127.0.0.1:8811")
 API_TIMEOUT_SECONDS = float(os.getenv("JANUS_API_TIMEOUT_SECONDS", "10"))
+AUTH_USERNAME = os.getenv("JANUS_AUTH_USERNAME", "admin")
+AUTH_PASSWORD = os.getenv("JANUS_AUTH_PASSWORD", "admin123")
+
+
+_COOKIE_JAR = http.cookiejar.CookieJar()
+_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_COOKIE_JAR))
+
+
+def _ensure_authenticated() -> None:
+    encoded = urllib.parse.urlencode({"username": AUTH_USERNAME, "password": AUTH_PASSWORD}).encode("utf-8")
+    req = urllib.request.Request(
+        url=f"{BASE_URL}/login",
+        data=encoded,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with _OPENER.open(req, timeout=API_TIMEOUT_SECONDS):
+        pass
 
 
 def _request_json(method: str, path: str, payload: dict | None = None) -> tuple[int, dict | list]:
@@ -19,7 +39,7 @@ def _request_json(method: str, path: str, payload: dict | None = None) -> tuple[
 
     req = urllib.request.Request(url=url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as response:
+        with _OPENER.open(req, timeout=API_TIMEOUT_SECONDS) as response:
             raw = response.read().decode("utf-8")
             body = json.loads(raw) if raw else {}
             return response.status, body
@@ -90,8 +110,10 @@ def _create_workflow_with_two_nodes(workflow_name: str) -> int:
     )
     assert status == 201
     assert isinstance(body, dict)
-    assert "id" in body
-    return int(body["id"])
+    data = body.get("data")
+    assert isinstance(data, dict)
+    assert "id" in data
+    return int(data["id"])
 
 
 def _start_execution(workflow_id: int, input_payload: dict) -> int:
@@ -102,18 +124,23 @@ def _start_execution(workflow_id: int, input_payload: dict) -> int:
     )
     assert status == 201
     assert isinstance(body, dict)
-    assert body.get("status") == "RUNNING"
-    return int(body["execution_id"])
+    data = body.get("data")
+    assert isinstance(data, dict)
+    assert data.get("status") == "RUNNING"
+    return int(data["execution_id"])
 
 
 def _get_execution(execution_id: int) -> dict:
     status, body = _request_json("GET", f"/api/executions/{execution_id}")
     assert status == 200
     assert isinstance(body, dict)
-    return body
+    data = body.get("data")
+    assert isinstance(data, dict)
+    return data
 
 
 def test_execution_lifecycle_cancel_flow() -> None:
+    _ensure_authenticated()
     workflow_name = _unique_workflow_name("smoke_lifecycle")
     workflow_id = _create_workflow_with_two_nodes(workflow_name)
 
@@ -125,7 +152,7 @@ def test_execution_lifecycle_cancel_flow() -> None:
 
     status, body = _request_json("POST", f"/api/executions/{execution_id}/cancel")
     assert status == 200
-    assert body == {"ok": True}
+    assert body.get("data") == {"ok": True}
 
     execution_after_cancel = _get_execution(execution_id)
     assert execution_after_cancel["status"] == "CANCELLED"
@@ -135,6 +162,7 @@ def test_execution_lifecycle_cancel_flow() -> None:
 
 
 def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
+    _ensure_authenticated()
     workflow_name = _unique_workflow_name("smoke_controls")
     workflow_id = _create_workflow_with_two_nodes(workflow_name)
 
@@ -148,7 +176,7 @@ def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
         {"output": {"manual": True, "note": "smoke complete"}},
     )
     assert status == 200
-    assert body == {"ok": True}
+    assert body.get("data") == {"ok": True}
 
     details_1_after = _get_execution(execution_1)
     task_1_after = next(task for task in details_1_after["tasks"] if int(task["id"]) == task_1_id)
@@ -158,7 +186,8 @@ def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
 
     logs_status, logs_body = _request_json("GET", f"/api/tasks/{task_1_id}/logs")
     assert logs_status == 200
-    assert isinstance(logs_body, list)
+    assert isinstance(logs_body, dict)
+    assert isinstance(logs_body.get("data"), list)
 
     execution_2 = _start_execution(workflow_id, {"test": "manual_skip"})
     details_2 = _get_execution(execution_2)
@@ -170,7 +199,7 @@ def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
         {"reason": "smoke skip"},
     )
     assert status == 200
-    assert body == {"ok": True}
+    assert body.get("data") == {"ok": True}
 
     details_2_after = _get_execution(execution_2)
     task_2_after = next(task for task in details_2_after["tasks"] if int(task["id"]) == task_2_id)
@@ -182,7 +211,7 @@ def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
 
     status, body = _request_json("POST", f"/api/tasks/{task_3_id}/retry")
     assert status == 200
-    assert body == {"ok": True}
+    assert body.get("data") == {"ok": True}
 
     details_3_after = _get_execution(execution_3)
     task_3_after = next(task for task in details_3_after["tasks"] if int(task["id"]) == task_3_id)
