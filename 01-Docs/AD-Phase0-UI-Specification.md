@@ -46,6 +46,9 @@ Radius and elevation:
 Typography:
 - UI font stack: "IBM Plex Sans", "Segoe UI", sans-serif
 - Mono font stack: "IBM Plex Mono", "Cascadia Code", monospace
+- Additional admin-selectable pairs in Settings:
+  - Source Sans 3 + Source Code Pro
+  - Nunito Sans + JetBrains Mono
 - Scale:
   - --text-xs: 12px
   - --text-sm: 14px
@@ -221,7 +224,7 @@ Testing baseline for each page:
 - Browser target: latest evergreen browsers only.
 - Theme target: light and dark both delivered in Phase 1.
 - Realtime target: SSE in Phase 3 with polling fallback.
-- Security note: HttpOnly session cookies with secure flag disabled in current non-SSL environment.
+- Security note: HTTP-only deployment (no SSL); session cookies remain HttpOnly with secure flag disabled.
 
 ## 9. Phase 1 Entry Criteria
 Phase 1 can start when:

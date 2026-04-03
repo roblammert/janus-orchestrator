@@ -8,6 +8,8 @@ use Janus\Http;
 use Janus\TaskService;
 use Janus\View;
 use Janus\WorkflowService;
+use Janus\AuthService;
+use Janus\AppShell;
 
 require_once __DIR__ . '/../app/php/src/bootstrap.php';
 
@@ -16,24 +18,76 @@ $pdo = $db->pdo();
 $workflowService = new WorkflowService($pdo);
 $executionService = new ExecutionService($pdo);
 $taskService = new TaskService($pdo);
+$authService = new AuthService($pdo);
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
 
 try {
+    $publicPaths = ['/login'];
+    $isApiPath = str_starts_with($path, '/api/');
+
+    if ($method === 'GET' && $path === '/logout') {
+        $authService->logout();
+        header('Location: /login');
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/login') {
+        if ($authService->currentUser() !== null) {
+            header('Location: /');
+            exit;
+        }
+
+        View::render('login', [], ['title' => 'Login', 'isPublic' => true]);
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/login') {
+        $username = trim((string)($_POST['username'] ?? ''));
+        $password = (string)($_POST['password'] ?? '');
+
+        if ($authService->login($username, $password)) {
+            header('Location: /');
+            exit;
+        }
+
+        View::render('login', ['error' => 'Invalid credentials'], ['title' => 'Login', 'isPublic' => true]);
+        exit;
+    }
+
+    if (!in_array($path, $publicPaths, true)) {
+        if ($isApiPath) {
+            $authService->requireAuthenticatedApi();
+        } else {
+            $authService->requireAuthenticatedPage();
+        }
+    }
+
+    $user = $authService->currentUser();
+
     if ($method === 'GET' && $path === '/') {
-        View::render('workflows', ['workflows' => $workflowService->listWorkflows()]);
+        View::render('workflows', ['workflows' => $workflowService->listWorkflows()], AppShell::meta('Workflows', $user));
         exit;
     }
 
     if ($method === 'GET' && $path === '/executions') {
-        View::render('executions', ['executions' => $executionService->listExecutions()]);
+        View::render('executions', ['executions' => $executionService->listExecutions()], AppShell::meta('Executions', $user));
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/settings') {
+        View::render('settings', ['user' => $user], AppShell::meta('Settings', $user));
         exit;
     }
 
     if ($method === 'GET' && preg_match('#^/workflows/([^/]+)$#', $path, $m) === 1) {
         $name = urldecode($m[1]);
-        View::render('workflow_detail', ['name' => $name, 'versions' => $workflowService->listWorkflowVersions($name)]);
+        View::render(
+            'workflow_detail',
+            ['name' => $name, 'versions' => $workflowService->listWorkflowVersions($name)],
+            AppShell::meta('Workflow Detail', $user)
+        );
         exit;
     }
 
@@ -45,7 +99,7 @@ try {
             exit;
         }
 
-        View::render('execution_detail', ['execution' => $execution]);
+        View::render('execution_detail', ['execution' => $execution], AppShell::meta('Execution Detail', $user));
         exit;
     }
 

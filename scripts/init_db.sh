@@ -12,6 +12,7 @@ MYSQL_CMD="mysql -h ${DB_HOST:-127.0.0.1} -P ${DB_PORT:-3306} -u ${DB_USER:-janu
 
 $MYSQL_CMD < "$SQL_DIR/001_schema.sql"
 $MYSQL_CMD < "$SQL_DIR/002_views.sql"
+$MYSQL_CMD < "$SQL_DIR/004_phase1_auth.sql"
 
 if [ "${SEED_EXAMPLE:-0}" = "1" ]; then
   $MYSQL_CMD < "$SQL_DIR/003_seed_example.sql"

@@ -24,6 +24,9 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 ## Components
 
 - PHP UI/API (`public/index.php` + `app/php/src/*`)
+	- Local username/password login and session guard for UI + API.
+	- Shared shell layout with sidebar/header/footer status line.
+	- Theme preferences for all users and admin font-pair selection.
 	- Workflow version creation and listing.
 	- Execution start/list/detail.
 	- Manual controls: retry, skip, manual-complete, cancel execution.
@@ -53,6 +56,7 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 - `sql/001_schema.sql`: tables and indexes.
 - `sql/002_views.sql`: observability views.
 - `sql/003_seed_example.sql`: demo workflow seed.
+- `sql/004_phase1_auth.sql`: Phase 1 auth and audit tables.
 
 ## API Endpoints
 
@@ -70,6 +74,13 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 - `GET /api/tasks/{id}/logs` per-task logs
 - `GET /api/metrics/overview` metrics from SQL views
 
+UI routes:
+
+- `GET /login` login page
+- `POST /login` authenticate session
+- `GET /logout` end session
+- `GET /settings` theme preferences and admin font selection
+
 ## Environment Variables
 
 Use `.env.example` as source:
@@ -83,9 +94,22 @@ Use `.env.example` as source:
 	- `TASK_STALE_SECONDS`
 	- `TASK_RETRY_BACKOFF_SECONDS`
 	- `WORKFLOW_DEFAULT_TIMEOUT_SECONDS`
+- App/session:
+	- `APP_ENV`
+	- `APP_VERSION`
+	- `SESSION_COOKIE_NAME`
+	- `SESSION_ABSOLUTE_TTL_SECONDS`
+	- `SESSION_IDLE_TIMEOUT_SECONDS`
+	- `BOOTSTRAP_ADMIN_USERNAME`
+	- `BOOTSTRAP_ADMIN_PASSWORD`
 - Container startup:
 	- `AUTO_INIT_DB`
 	- `SEED_EXAMPLE`
+
+Security mode:
+
+- Deployment target is HTTP-only (no SSL).
+- Session cookies are `HttpOnly` and non-secure by design in this environment.
 
 ## Build and Run (Docker)
 

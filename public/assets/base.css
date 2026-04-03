@@ -1,0 +1,88 @@
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+
+  --color-bg: #f4f7fb;
+  --color-surface: #ffffff;
+  --color-border: #d7dee8;
+  --color-text: #112033;
+  --color-text-muted: #4f6479;
+  --color-accent: #056ee9;
+  --color-success: #198754;
+  --color-warning: #b67700;
+  --color-danger: #c12a2a;
+  --color-info: #1f75cb;
+
+  --font-ui: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", monospace;
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #0e1722;
+  --color-surface: #1a2734;
+  --color-border: #2a3c4f;
+  --color-text: #e5eef8;
+  --color-text-muted: #a7bfd5;
+  --color-accent: #53a3ff;
+  --color-success: #4cc487;
+  --color-warning: #f2b94b;
+  --color-danger: #ff7f7f;
+  --color-info: #7bb7ff;
+}
+
+:root[data-font-pair="source"] {
+  --font-ui: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-mono: "Source Code Pro", "Cascadia Code", monospace;
+}
+
+:root[data-font-pair="nunito"] {
+  --font-ui: "Nunito Sans", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+a {
+  color: var(--color-accent);
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}

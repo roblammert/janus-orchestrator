@@ -6,7 +6,7 @@ namespace Janus;
 
 final class View
 {
-    public static function render(string $template, array $vars = []): void
+    public static function render(string $template, array $vars = [], array $meta = []): void
     {
         $templatePath = __DIR__ . '/../views/' . $template . '.php';
         if (!is_file($templatePath)) {
@@ -16,8 +16,7 @@ final class View
         }
 
         extract($vars, EXTR_SKIP);
-        include __DIR__ . '/../views/layout/header.php';
-        include $templatePath;
-        include __DIR__ . '/../views/layout/footer.php';
+        $pageMeta = $meta;
+        include __DIR__ . '/../views/layout/app_shell.php';
     }
 }

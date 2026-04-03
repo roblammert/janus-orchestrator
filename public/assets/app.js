@@ -1,25 +1,5 @@
-async function api(url, method = 'GET', body = null) {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: body ? JSON.stringify(body) : null
-  });
-
-  const text = await response.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch (_) {
-    data = { raw: text };
-  }
-
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed (${response.status})`);
-  }
-
-  return data;
+function api(url, method = 'GET', body = null) {
+  return window.JanusUI.api(url, method, body);
 }
 
 function bindCreateWorkflow() {
@@ -37,9 +17,10 @@ function bindCreateWorkflow() {
         description: fd.get('description'),
         definition
       });
+      window.JanusUI.showToast('Workflow version created', 'success');
       window.location.reload();
     } catch (error) {
-      alert(error.message);
+      window.JanusUI.showToast(error.message, 'error');
     }
   });
 }
@@ -57,9 +38,10 @@ function bindStartExecution() {
           workflow_id: workflowId,
           input
         });
+        window.JanusUI.showToast('Execution started', 'success');
         window.location.href = `/executions/${result.execution_id}`;
       } catch (error) {
-        alert(error.message);
+        window.JanusUI.showToast(error.message, 'error');
       }
     });
   });
@@ -71,9 +53,10 @@ function bindExecutionCancelButtons() {
       const executionId = Number(button.dataset.executionId);
       try {
         await api(`/api/executions/${executionId}/cancel`, 'POST');
+        window.JanusUI.showToast('Execution cancelled', 'success');
         window.location.reload();
       } catch (error) {
-        alert(error.message);
+        window.JanusUI.showToast(error.message, 'error');
       }
     });
   });
@@ -84,9 +67,10 @@ function bindTaskButtons() {
     button.addEventListener('click', async () => {
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/retry`, 'POST');
+        window.JanusUI.showToast('Task queued for retry', 'success');
         window.location.reload();
       } catch (error) {
-        alert(error.message);
+        window.JanusUI.showToast(error.message, 'error');
       }
     });
   });
@@ -97,9 +81,10 @@ function bindTaskButtons() {
       if (reason === null) return;
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/skip`, 'POST', { reason });
+        window.JanusUI.showToast('Task skipped', 'success');
         window.location.reload();
       } catch (error) {
-        alert(error.message);
+        window.JanusUI.showToast(error.message, 'error');
       }
     });
   });
@@ -111,9 +96,10 @@ function bindTaskButtons() {
       try {
         const output = JSON.parse(outputRaw);
         await api(`/api/tasks/${Number(button.dataset.taskId)}/complete`, 'POST', { output });
+        window.JanusUI.showToast('Task manually completed', 'success');
         window.location.reload();
       } catch (error) {
-        alert(error.message);
+        window.JanusUI.showToast(error.message, 'error');
       }
     });
   });

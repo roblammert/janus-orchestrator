@@ -1,0 +1,37 @@
+#task-log-viewer {
+  min-height: 180px;
+}
+
+@media (max-width: 767px) {
+  .header-controls {
+    flex-wrap: wrap;
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tr {
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
+  td {
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  td:last-child {
+    border-bottom: none;
+  }
+}

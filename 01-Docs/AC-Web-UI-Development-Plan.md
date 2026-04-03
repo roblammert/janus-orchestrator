@@ -34,11 +34,13 @@ Reference inspiration (read-only):
 ## Confirmed Planning Decisions (2026-04-03)
 - Authentication: local username/password now (same style as rjweb project).
 - Theme: light + dark in Phase 1.
+- Fonts: keep default IBM Plex pair and allow admins to select two additional pairs in Settings.
 - Realtime: SSE targeted in Phase 3.
 - DAG UX: interactive node-edge panel with drill-in from first execution detail release.
 - RBAC timing: begin in Phase 4.
 - Browser support: latest evergreen browsers only.
 - Observability visuals: summary cards first, trend charts later.
+- Security transport: HTTP only (no SSL) for this deployment.
 
 ## Phased Checklist
 
@@ -62,32 +64,34 @@ Definition of done:
 - No implementation yet, only agreed UX and component rules.
 
 ### Phase 1 - Shared AppShell and Frontend Architecture
-- [ ] Create shared shell renderer class in app/php support layer (Janus equivalent of AppShell).
-- [ ] Add shell layout with:
+- [x] Create shared shell renderer class in app/php support layer (Janus equivalent of AppShell).
+- [x] Add shell layout with:
   - Sidebar navigation
   - Header with page title and environment context
   - Footer with status line and app version
-- [ ] Refactor existing views to consume shared shell.
-- [ ] Implement local auth/session baseline now:
+- [x] Refactor existing views to consume shared shell.
+- [x] Implement local auth/session baseline now:
   - Login/logout pages and guarded routes
   - Password hashing and verification
   - Initial admin bootstrap flow
-- [ ] Split CSS into layered files:
+- [x] Split CSS into layered files:
   - base.css (resets/tokens)
   - layout.css (shell, grid)
   - components.css (forms, tables, badges, cards, modals, toasts)
   - pages.css (page-specific overrides)
-- [ ] Add shared site.js for global UX utilities:
+- [x] Add shared site.js for global UX utilities:
   - footer status updates
   - toast notifications
   - standardized API error rendering
-- [ ] Add theme strategy (light and dark, both complete in Phase 1).
+- [x] Add theme strategy (light and dark, both complete in Phase 1).
+- [x] Add font strategy with admin-selectable font pairs in Settings.
 
 Definition of done:
 - All existing pages render through one shell.
 - Existing functionality unchanged.
 - Visual consistency improved.
 - Local login/session flow is active for UI/API access.
+- Phase 1 artifacts delivered in code and docs.
 
 ### Phase 2 - Core UI Workflows (Professional Operations UX)
 - [ ] Rebuild Workflows page:
@@ -137,7 +141,7 @@ Definition of done:
 - API contracts are stable and testable.
 
 ### Phase 4 - Security and Trustworthy Operations UX
-- [ ] Introduce authentication and session model for UI/API access.
+- [ ] Harden and expand authentication/session model for UI/API access.
 - [ ] Add CSRF protection for state-changing operations.
 - [ ] Add role model:
   - Viewer (read-only)
