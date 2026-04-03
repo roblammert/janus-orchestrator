@@ -2,6 +2,15 @@ function api(url, method = 'GET', body = null) {
   return window.JanusUI.api(url, method, body);
 }
 
+function statusClassFromValue(statusRaw) {
+  return String(statusRaw || '').toLowerCase().replace(/_/g, '-');
+}
+
+function statusPillMarkup(statusRaw) {
+  const status = String(statusRaw || 'UNKNOWN');
+  return `<span class="status-pill status-${statusClassFromValue(status)}">${status}</span>`;
+}
+
 function confirmAction(message) {
   return new Promise((resolve) => {
     const modal = document.getElementById('confirm-modal');
@@ -21,6 +30,8 @@ function confirmAction(message) {
       modal.hidden = true;
       confirmBtn.removeEventListener('click', onConfirm);
       cancelBtn.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKeydown);
     };
 
     const onConfirm = () => {
@@ -33,8 +44,22 @@ function confirmAction(message) {
       resolve(false);
     };
 
+    const onBackdrop = (event) => {
+      if (event.target === modal) {
+        onCancel();
+      }
+    };
+
+    const onKeydown = (event) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+
     confirmBtn.addEventListener('click', onConfirm);
     cancelBtn.addEventListener('click', onCancel);
+    modal.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKeydown);
   });
 }
 
@@ -57,6 +82,8 @@ function collectExecutionInput() {
       modal.hidden = true;
       confirmBtn.removeEventListener('click', onConfirm);
       cancelBtn.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKeydown);
     };
 
     const onConfirm = () => {
@@ -74,8 +101,22 @@ function collectExecutionInput() {
       reject(new Error('Execution start cancelled'));
     };
 
+    const onBackdrop = (event) => {
+      if (event.target === modal) {
+        onCancel();
+      }
+    };
+
+    const onKeydown = (event) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+
     confirmBtn.addEventListener('click', onConfirm);
     cancelBtn.addEventListener('click', onCancel);
+    modal.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKeydown);
   });
 }
 
@@ -338,7 +379,9 @@ function bindObservabilityWorkspace() {
         const tr = document.createElement('tr');
         const ok = value && value.ok === true;
         const unknown = value && value.ok === null;
-        tr.innerHTML = `<td>${name}</td><td>${unknown ? 'Unknown' : ok ? 'Healthy' : 'Degraded'}</td><td>${JSON.stringify(value?.details || {})}</td>`;
+        const statusText = unknown ? 'Unknown' : ok ? 'Healthy' : 'Degraded';
+        const statusClass = unknown ? 'status-muted' : ok ? 'status-success' : 'status-danger';
+        tr.innerHTML = `<td>${name}</td><td><span class="status-pill ${statusClass}">${statusText}</span></td><td>${JSON.stringify(value?.details || {})}</td>`;
         body.appendChild(tr);
       });
     } catch (error) {
@@ -449,7 +492,22 @@ function bindExecutionCancelButtons() {
       try {
         await api(`/api/executions/${executionId}/cancel`, 'POST');
         window.JanusUI.showToast('Execution cancelled', 'success');
-        window.location.reload();
+
+        const row = button.closest('tr');
+        if (row) {
+          row.dataset.status = 'CANCELLED';
+          const statusCell = row.children[3];
+          if (statusCell) {
+            statusCell.innerHTML = statusPillMarkup('CANCELLED');
+          }
+          button.remove();
+        }
+
+        const executionStatus = document.getElementById('execution-status');
+        if (executionStatus) {
+          executionStatus.className = `status-pill status-${statusClassFromValue('CANCELLED')}`;
+          executionStatus.textContent = 'CANCELLED';
+        }
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -545,7 +603,7 @@ function bindTaskButtons() {
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/retry`, 'POST');
         window.JanusUI.showToast('Task queued for retry', 'success');
-        window.location.reload();
+        refreshExecutionTasks();
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -559,7 +617,7 @@ function bindTaskButtons() {
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/skip`, 'POST', { reason: 'Skipped manually' });
         window.JanusUI.showToast('Task skipped', 'success');
-        window.location.reload();
+        refreshExecutionTasks();
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -574,7 +632,7 @@ function bindTaskButtons() {
         const output = { manual: true, source: 'ui' };
         await api(`/api/tasks/${Number(button.dataset.taskId)}/complete`, 'POST', { output });
         window.JanusUI.showToast('Task manually completed', 'success');
-        window.location.reload();
+        refreshExecutionTasks();
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -715,14 +773,17 @@ async function refreshExecutionTasks() {
   try {
     const execution = await api(`/api/executions/${executionId}`);
     const status = document.getElementById('execution-status');
-    if (status) status.textContent = execution.status;
+    if (status) {
+      status.className = `status-pill status-${statusClassFromValue(execution.status)}`;
+      status.textContent = String(execution.status || 'UNKNOWN');
+    }
 
     execution.tasks.forEach((task) => {
       const row = table.querySelector(`tr[data-task-id="${task.id}"]`);
       if (!row) return;
       const statusCell = row.querySelector('.task-status');
       const errorCell = row.querySelector('.task-error');
-      if (statusCell) statusCell.textContent = task.status;
+      if (statusCell) statusCell.innerHTML = statusPillMarkup(task.status);
       if (errorCell) errorCell.textContent = task.last_error || '';
     });
   } catch (_) {

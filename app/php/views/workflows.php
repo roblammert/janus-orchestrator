@@ -1,6 +1,8 @@
 <section id="workflow-workspace">
-    <h2>Workflows</h2>
-    <p>Create immutable workflow versions and inspect historical definitions from a single view.</p>
+    <header class="page-heading">
+        <h2>Workflows</h2>
+        <p>Create immutable workflow versions and inspect historical definitions from a single view.</p>
+    </header>
 
     <div class="workflow-toolbar">
         <label>
@@ -20,30 +22,32 @@
 
     <div class="workflow-layout">
         <div class="workflow-list-panel">
-            <table id="workflow-list-table">
-                <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Latest Version</th>
-                    <th>Total Versions</th>
-                    <th>Actions</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($workflows as $workflow): ?>
-                    <tr
-                        data-workflow-name="<?= htmlspecialchars((string)$workflow['name']) ?>"
-                        data-latest-version="<?= (int)$workflow['latest_version'] ?>"
-                        data-versions-count="<?= (int)$workflow['versions_count'] ?>"
-                    >
-                        <td><?= htmlspecialchars((string)$workflow['name']) ?></td>
-                        <td><?= (int)$workflow['latest_version'] ?></td>
-                        <td><?= (int)$workflow['versions_count'] ?></td>
-                        <td><a href="/workflows/<?= urlencode((string)$workflow['name']) ?>">Legacy view</a></td>
+            <div class="table-scroll">
+                <table id="workflow-list-table">
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Latest Version</th>
+                        <th>Total Versions</th>
+                        <th>Actions</th>
                     </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($workflows as $workflow): ?>
+                        <tr
+                            data-workflow-name="<?= htmlspecialchars((string)$workflow['name']) ?>"
+                            data-latest-version="<?= (int)$workflow['latest_version'] ?>"
+                            data-versions-count="<?= (int)$workflow['versions_count'] ?>"
+                        >
+                            <td><?= htmlspecialchars((string)$workflow['name']) ?></td>
+                            <td><?= (int)$workflow['latest_version'] ?></td>
+                            <td><?= (int)$workflow['versions_count'] ?></td>
+                            <td><a href="/workflows/<?= urlencode((string)$workflow['name']) ?>">Legacy view</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="workflow-detail-panel">

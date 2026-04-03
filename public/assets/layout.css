@@ -1,7 +1,8 @@
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 260px 1fr;
+  overflow: hidden;
 }
 
 .app-sidebar {
@@ -11,11 +12,20 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.app-nav {
+  display: grid;
+  gap: var(--space-1);
 }
 
 .brand {
   font-size: var(--text-xl);
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .env-badge {
@@ -31,32 +41,61 @@
 .app-main {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app-header {
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-bg) 8%);
   padding: var(--space-4) var(--space-5);
   display: flex;
   justify-content: space-between;
   gap: var(--space-4);
   align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(6px);
+}
+
+.page-title {
+  margin: 0;
+  font-size: clamp(20px, 2vw, 28px);
+  letter-spacing: 0.01em;
 }
 
 .content-area {
   padding: var(--space-5);
-  max-width: 1360px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.content-inner {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+  padding-bottom: var(--space-4);
 }
 
 .app-footer {
   border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-bg) 6%);
   color: var(--color-text-muted);
   padding: var(--space-3) var(--space-5);
   display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-5);
   font-size: var(--text-sm);
+}
+
+.app-footer span {
+  white-space: nowrap;
 }
 
 .auth-main {
@@ -76,20 +115,28 @@
 
 @media (max-width: 1199px) {
   .app-shell {
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 104px 1fr;
   }
 
   .nav-link {
     text-align: center;
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+    font-size: var(--text-xs);
   }
 }
 
 @media (max-width: 767px) {
   .app-shell {
+    height: auto;
+    min-height: 100vh;
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .app-sidebar {
+    position: static;
+    height: auto;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
     flex-direction: row;
@@ -98,7 +145,21 @@
   }
 
   .app-header {
+    position: static;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .app-main {
+    height: auto;
+    overflow: visible;
+  }
+
+  .content-area {
+    overflow: visible;
+  }
+
+  .content-inner {
+    width: 100%;
   }
 }

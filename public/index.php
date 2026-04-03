@@ -25,6 +25,13 @@ $authService = new AuthService($pdo);
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
 
+if (PHP_SAPI === 'cli-server') {
+    $staticFile = __DIR__ . $path;
+    if ($path !== '/' && is_file($staticFile)) {
+        return false;
+    }
+}
+
 try {
     $publicPaths = ['/login'];
     $isApiPath = str_starts_with($path, '/api/');

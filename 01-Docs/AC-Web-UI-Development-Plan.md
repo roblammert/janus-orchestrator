@@ -140,6 +140,17 @@ Definition of done:
 - UI pages no longer rely on ad hoc shape assumptions.
 - API contracts are stable and testable.
 
+### Pre-Phase 4 UI Parity and Structural Polish Gate (2026-04-03)
+- [x] Complete full rjweb-inspired parity pass across shell and core operational pages.
+- [x] Apply structural tune pass for page headings, data-table containment, and execution detail information hierarchy.
+- [x] Reduce forced full-page reload patterns in key execution/task actions with in-place updates.
+- [x] Improve live status rendering consistency (status pill classing during polling updates).
+- [x] Resolve refresh/page-change theme repaint flash with pre-paint preference bootstrap.
+
+Definition of done:
+- Main shell and all Phase 2 surfaces are visually and structurally consistent.
+- Interaction updates feel stable and professional before security/RBAC work begins.
+
 ### Phase 4 - Security and Trustworthy Operations UX
 - [ ] Harden and expand authentication/session model for UI/API access.
 - [ ] Add CSRF protection for state-changing operations.

@@ -9,11 +9,47 @@ $currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
 ?>
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" data-font-pair="plex">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title><?= htmlspecialchars($title) ?> - Janus Orchestrator</title>
+        <script>
+            (function () {
+                var themeKey = 'janus.theme';
+                var fontKey = 'janus.fontPair';
+                var root = document.documentElement;
+
+                try {
+                    var savedTheme = localStorage.getItem(themeKey);
+                    var savedFont = localStorage.getItem(fontKey);
+                    var theme = savedTheme === 'dark' ? 'dark' : 'light';
+                    var font = savedFont === 'source' || savedFont === 'nunito' ? savedFont : 'plex';
+
+                    root.setAttribute('data-theme', theme);
+                    root.setAttribute('data-font-pair', font);
+                } catch (_) {
+                    root.setAttribute('data-theme', 'light');
+                    root.setAttribute('data-font-pair', 'plex');
+                }
+            })();
+        </script>
+        <style>
+            html[data-theme="light"],
+            html[data-theme="light"] body {
+                background: #edf3f9;
+                color: #0f2238;
+            }
+
+            html[data-theme="dark"],
+            html[data-theme="dark"] body {
+                background: #0a1320;
+                color: #e8f1fb;
+            }
+        </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito+Sans:wght@400;600;700&family=Source+Code+Pro:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/assets/base.css" />
     <link rel="stylesheet" href="/assets/layout.css" />
     <link rel="stylesheet" href="/assets/components.css" />
@@ -31,7 +67,7 @@ $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
     <div class="app-shell">
         <aside class="app-sidebar">
             <div class="brand">Janus</div>
-            <nav>
+            <nav class="app-nav" aria-label="Primary">
                 <?php foreach ($navItems as $item): ?>
                     <?php
                     $href = (string)($item['href'] ?? '#');
@@ -47,9 +83,9 @@ $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
 
         <div class="app-main">
             <header class="app-header">
-                <h1><?= htmlspecialchars($title) ?></h1>
+                <h1 class="page-title"><?= htmlspecialchars($title) ?></h1>
                 <div class="header-controls">
-                    <button id="theme-toggle-btn" type="button">Toggle Theme</button>
+                    <button id="theme-toggle-btn" type="button" aria-label="Toggle theme">Theme: Light</button>
                     <?php if ($user !== null): ?>
                         <?php if (($user['role'] ?? '') === 'ADMIN'): ?>
                             <label for="font-pair-selector">Font</label>
@@ -66,7 +102,9 @@ $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
             </header>
 
             <main class="content-area">
-                <?php include $templatePath; ?>
+                <div class="content-inner">
+                    <?php include $templatePath; ?>
+                </div>
             </main>
 
             <footer class="app-footer">

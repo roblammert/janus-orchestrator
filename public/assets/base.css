@@ -21,12 +21,12 @@
   --motion-slow: 260ms;
   --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
 
-  --color-bg: #f4f7fb;
+  --color-bg: #edf3f9;
   --color-surface: #ffffff;
-  --color-border: #d7dee8;
-  --color-text: #112033;
-  --color-text-muted: #4f6479;
-  --color-accent: #056ee9;
+  --color-border: #cbd8e6;
+  --color-text: #0f2238;
+  --color-text-muted: #4a6078;
+  --color-accent: #0c64d6;
   --color-success: #198754;
   --color-warning: #b67700;
   --color-danger: #c12a2a;
@@ -37,16 +37,16 @@
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #0e1722;
-  --color-surface: #1a2734;
-  --color-border: #2a3c4f;
-  --color-text: #e5eef8;
-  --color-text-muted: #a7bfd5;
-  --color-accent: #53a3ff;
-  --color-success: #4cc487;
-  --color-warning: #f2b94b;
-  --color-danger: #ff7f7f;
-  --color-info: #7bb7ff;
+  --color-bg: #0a1320;
+  --color-surface: #132234;
+  --color-border: #24405d;
+  --color-text: #e8f1fb;
+  --color-text-muted: #9cb8d2;
+  --color-accent: #69b2ff;
+  --color-success: #52d198;
+  --color-warning: #ffcb6b;
+  --color-danger: #ff8f8f;
+  --color-info: #89c4ff;
 }
 
 :root[data-font-pair="source"] {
@@ -67,7 +67,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--color-bg);
+  background: radial-gradient(circle at top right, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 45%), var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-ui);
 }

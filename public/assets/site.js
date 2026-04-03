@@ -19,8 +19,14 @@
   }
 
   function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
-    setPreference(PREF_THEME_KEY, theme);
+    const normalized = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', normalized);
+    setPreference(PREF_THEME_KEY, normalized);
+
+    const themeToggle = document.getElementById('theme-toggle-btn');
+    if (themeToggle) {
+      themeToggle.textContent = normalized === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+    }
   }
 
   function applyFontPair(fontPair) {
@@ -78,8 +84,10 @@
     syncSettingsControls();
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      const theme = document.getElementById('theme-selector').value;
-      const font = document.getElementById('font-selector').value;
+      const themeControl = document.getElementById('theme-selector');
+      const fontControl = document.getElementById('font-selector');
+      const theme = themeControl ? themeControl.value : getPreference(PREF_THEME_KEY, 'light');
+      const font = fontControl ? fontControl.value : getPreference(PREF_FONT_KEY, 'plex');
       applyTheme(theme);
       applyFontPair(font);
       syncSettingsControls();

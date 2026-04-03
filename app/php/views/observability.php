@@ -1,6 +1,8 @@
 <section id="observability-workspace">
-    <h2>Observability</h2>
-    <p>Operational overview of workflow throughput, task states, duration, and service health.</p>
+    <header class="page-heading">
+        <h2>Observability</h2>
+        <p>Operational overview of workflow throughput, task states, duration, and service health.</p>
+    </header>
 
     <div class="observability-cards" id="observability-summary-cards">
         <article>
@@ -19,22 +21,24 @@
 
     <section>
         <h3>Service Health</h3>
-        <table id="obs-health-table">
-            <thead>
-            <tr>
-                <th>Service</th>
-                <th>Status</th>
-                <th>Details</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr><td>Web</td><td>Loading...</td><td></td></tr>
-            <tr><td>API</td><td>Loading...</td><td></td></tr>
-            <tr><td>DB</td><td>Loading...</td><td></td></tr>
-            <tr><td>FastAPI</td><td>Loading...</td><td></td></tr>
-            <tr><td>Scheduler</td><td>Loading...</td><td></td></tr>
-            <tr><td>Worker</td><td>Loading...</td><td></td></tr>
-            </tbody>
-        </table>
+        <div class="table-scroll">
+            <table id="obs-health-table">
+                <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr><td>Web</td><td>Loading...</td><td></td></tr>
+                <tr><td>API</td><td>Loading...</td><td></td></tr>
+                <tr><td>DB</td><td>Loading...</td><td></td></tr>
+                <tr><td>FastAPI</td><td>Loading...</td><td></td></tr>
+                <tr><td>Scheduler</td><td>Loading...</td><td></td></tr>
+                <tr><td>Worker</td><td>Loading...</td><td></td></tr>
+                </tbody>
+            </table>
+        </div>
     </section>
 </section>

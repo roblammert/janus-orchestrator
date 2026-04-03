@@ -1,11 +1,28 @@
 <section id="execution-workspace" data-execution-id="<?= (int)$execution['id'] ?>">
-    <h2>Execution #<?= (int)$execution['id'] ?></h2>
-    <p>Workflow: <?= htmlspecialchars((string)$execution['workflow_name']) ?> v<?= (int)$execution['workflow_version'] ?></p>
-    <p>Status: <strong id="execution-status"><?= htmlspecialchars((string)$execution['status']) ?></strong></p>
-    <p>Started: <?= htmlspecialchars((string)$execution['started_at']) ?> | Finished: <?= htmlspecialchars((string)$execution['finished_at']) ?></p>
-    <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel Execution</button>
+    <header class="page-heading execution-heading">
+        <h2>Execution #<?= (int)$execution['id'] ?></h2>
+        <p>Workflow: <?= htmlspecialchars((string)$execution['workflow_name']) ?> v<?= (int)$execution['workflow_version'] ?></p>
+    </header>
+    <?php $executionStatusClass = strtolower(str_replace('_', '-', (string)$execution['status'])); ?>
+    <div class="execution-meta-grid">
+        <article class="execution-meta-card">
+            <h3>Status</h3>
+            <p><strong id="execution-status" class="status-pill status-<?= htmlspecialchars($executionStatusClass) ?>"><?= htmlspecialchars((string)$execution['status']) ?></strong></p>
+        </article>
+        <article class="execution-meta-card">
+            <h3>Started</h3>
+            <p><?= htmlspecialchars((string)$execution['started_at']) ?></p>
+        </article>
+        <article class="execution-meta-card">
+            <h3>Finished</h3>
+            <p><?= htmlspecialchars((string)$execution['finished_at']) ?></p>
+        </article>
+    </div>
+    <div class="execution-actions">
+        <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel Execution</button>
+    </div>
 
-    <div class="workflow-layout">
+    <div class="workflow-layout execution-layout">
         <div class="workflow-list-panel">
             <h3>Task Graph Summary</h3>
             <div id="execution-dag-panel" class="dag-panel">
@@ -29,6 +46,9 @@
                             <?= htmlspecialchars((string)$edge['from_node_key']) ?> -> <?= htmlspecialchars((string)$edge['to_node_key']) ?>
                         </li>
                     <?php endforeach; ?>
+                    <?php if (empty($execution['dag']['edges'])): ?>
+                        <li>No dependency edges.</li>
+                    <?php endif; ?>
                 </ul>
             </div>
 
@@ -38,42 +58,47 @@
 
         <div class="workflow-detail-panel">
             <h3>Tasks</h3>
-            <table id="execution-tasks-table" data-execution-id="<?= (int)$execution['id'] ?>">
-                <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Node</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Attempts</th>
-                    <th>Error</th>
-                    <th>Actions</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($execution['tasks'] as $task): ?>
-                    <tr
-                        data-task-id="<?= (int)$task['id'] ?>"
-                        data-node-key="<?= htmlspecialchars((string)$task['node_key']) ?>"
-                        data-started-at="<?= htmlspecialchars((string)($task['started_at'] ?? '')) ?>"
-                        data-finished-at="<?= htmlspecialchars((string)($task['finished_at'] ?? '')) ?>"
-                    >
-                        <td><?= (int)$task['id'] ?></td>
-                        <td><?= htmlspecialchars((string)$task['node_key']) ?></td>
-                        <td><?= htmlspecialchars((string)$task['node_type']) ?></td>
-                        <td class="task-status"><?= htmlspecialchars((string)$task['status']) ?></td>
-                        <td><?= (int)$task['attempts'] ?>/<?= (int)$task['max_attempts'] ?></td>
-                        <td class="task-error"><?= htmlspecialchars((string)$task['last_error']) ?></td>
-                        <td>
-                            <button class="task-retry-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Retry</button>
-                            <button class="task-skip-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Skip</button>
-                            <button class="task-complete-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Complete</button>
-                            <button class="task-logs-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Logs</button>
-                        </td>
+            <div class="table-scroll">
+                <table id="execution-tasks-table" data-execution-id="<?= (int)$execution['id'] ?>">
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Node</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Attempts</th>
+                        <th>Error</th>
+                        <th>Actions</th>
                     </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($execution['tasks'] as $task): ?>
+                        <tr
+                            data-task-id="<?= (int)$task['id'] ?>"
+                            data-node-key="<?= htmlspecialchars((string)$task['node_key']) ?>"
+                            data-started-at="<?= htmlspecialchars((string)($task['started_at'] ?? '')) ?>"
+                            data-finished-at="<?= htmlspecialchars((string)($task['finished_at'] ?? '')) ?>"
+                        >
+                            <td><?= (int)$task['id'] ?></td>
+                            <td><?= htmlspecialchars((string)$task['node_key']) ?></td>
+                            <td><?= htmlspecialchars((string)$task['node_type']) ?></td>
+                            <?php $taskStatusClass = strtolower(str_replace('_', '-', (string)$task['status'])); ?>
+                            <td class="task-status"><span class="status-pill status-<?= htmlspecialchars($taskStatusClass) ?>"><?= htmlspecialchars((string)$task['status']) ?></span></td>
+                            <td><?= (int)$task['attempts'] ?>/<?= (int)$task['max_attempts'] ?></td>
+                            <td class="task-error"><?= htmlspecialchars((string)$task['last_error']) ?></td>
+                            <td class="task-actions-cell">
+                                <div class="task-actions-stack">
+                                    <button class="task-retry-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Retry</button>
+                                    <button class="task-skip-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Skip</button>
+                                    <button class="task-complete-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Complete</button>
+                                    <button class="task-logs-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Logs</button>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
 
             <h3>Task Logs</h3>
             <div class="dead-letter-toolbar">

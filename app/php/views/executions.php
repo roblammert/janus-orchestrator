@@ -1,5 +1,8 @@
 <section id="executions-workspace">
-    <h2>Executions</h2>
+    <header class="page-heading">
+        <h2>Executions</h2>
+        <p>Review runtime activity, apply quick filters, and jump into live execution details.</p>
+    </header>
     <div class="workflow-toolbar">
         <label>
             Status
@@ -33,39 +36,44 @@
         </label>
     </div>
 
-    <table id="executions-list-table">
-        <thead>
-        <tr>
-            <th>ID</th>
-            <th>Workflow</th>
-            <th>Version</th>
-            <th>Status</th>
-            <th>Started</th>
-            <th>Finished</th>
-            <th>Actions</th>
-        </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($executions as $execution): ?>
-            <tr
-                data-execution-id="<?= (int)$execution['id'] ?>"
-                data-status="<?= htmlspecialchars((string)$execution['status']) ?>"
-                data-started-at="<?= htmlspecialchars((string)($execution['started_at'] ?? '')) ?>"
-            >
-                <td><?= (int)$execution['id'] ?></td>
-                <td><?= htmlspecialchars((string)$execution['workflow_name']) ?></td>
-                <td><?= (int)$execution['workflow_version'] ?></td>
-                <td><?= htmlspecialchars((string)$execution['status']) ?></td>
-                <td><?= htmlspecialchars((string)$execution['started_at']) ?></td>
-                <td><?= htmlspecialchars((string)$execution['finished_at']) ?></td>
-                <td>
-                    <a href="/executions/<?= (int)$execution['id'] ?>">View</a>
-                    <?php if (in_array($execution['status'], ['PENDING', 'RUNNING'], true)): ?>
-                        <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel</button>
-                    <?php endif; ?>
-                </td>
+    <div class="table-scroll">
+        <table id="executions-list-table">
+            <thead>
+            <tr>
+                <th>ID</th>
+                <th>Workflow</th>
+                <th>Version</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Actions</th>
             </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+            <?php foreach ($executions as $execution): ?>
+                <tr
+                    data-execution-id="<?= (int)$execution['id'] ?>"
+                    data-status="<?= htmlspecialchars((string)$execution['status']) ?>"
+                    data-started-at="<?= htmlspecialchars((string)($execution['started_at'] ?? '')) ?>"
+                >
+                    <td><?= (int)$execution['id'] ?></td>
+                    <td><?= htmlspecialchars((string)$execution['workflow_name']) ?></td>
+                    <td><?= (int)$execution['workflow_version'] ?></td>
+                    <td>
+                        <?php $statusClass = strtolower(str_replace('_', '-', (string)$execution['status'])); ?>
+                        <span class="status-pill status-<?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars((string)$execution['status']) ?></span>
+                    </td>
+                    <td><?= htmlspecialchars((string)$execution['started_at']) ?></td>
+                    <td><?= htmlspecialchars((string)$execution['finished_at']) ?></td>
+                    <td>
+                        <a href="/executions/<?= (int)$execution['id'] ?>">View</a>
+                        <?php if (in_array($execution['status'], ['PENDING', 'RUNNING'], true)): ?>
+                            <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel</button>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
 </section>
