@@ -6,6 +6,7 @@ use Janus\Database;
 use Janus\ExecutionService;
 use Janus\Http;
 use Janus\TaskService;
+use Janus\SystemService;
 use Janus\View;
 use Janus\WorkflowService;
 use Janus\AuthService;
@@ -18,6 +19,7 @@ $pdo = $db->pdo();
 $workflowService = new WorkflowService($pdo);
 $executionService = new ExecutionService($pdo);
 $taskService = new TaskService($pdo);
+$systemService = new SystemService($pdo);
 $authService = new AuthService($pdo);
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -78,6 +80,16 @@ try {
 
     if ($method === 'GET' && $path === '/settings') {
         View::render('settings', ['user' => $user], AppShell::meta('Settings', $user));
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/dead-letters') {
+        View::render('dead_letters', ['deadLetters' => $taskService->listDeadLetters()], AppShell::meta('Dead Letters', $user));
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/observability') {
+        View::render('observability', [], AppShell::meta('Observability', $user));
         exit;
     }
 
@@ -188,8 +200,27 @@ try {
         exit;
     }
 
+    if ($method === 'GET' && $path === '/api/dead-letters') {
+        Http::json($taskService->listDeadLetters());
+        exit;
+    }
+
+    if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/annotate$#', $path, $m) === 1) {
+        $body = Http::bodyJson();
+        $note = (string)($body['note'] ?? '');
+        $actorUserId = is_array($user) ? (int)($user['id'] ?? 0) : 0;
+        $taskService->annotateTask((int)$m[1], $note, $actorUserId > 0 ? $actorUserId : null);
+        Http::json(['ok' => true]);
+        exit;
+    }
+
     if ($method === 'GET' && $path === '/api/metrics/overview') {
         Http::json($executionService->metricsOverview());
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/api/health/services') {
+        Http::json($systemService->healthSummary());
         exit;
     }
 

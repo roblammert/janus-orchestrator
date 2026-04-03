@@ -94,23 +94,23 @@ Definition of done:
 - Phase 1 artifacts delivered in code and docs.
 
 ### Phase 2 - Core UI Workflows (Professional Operations UX)
-- [ ] Rebuild Workflows page:
+- [x] Rebuild Workflows page:
   - Search and sort
   - Version history panel
   - Definition viewer with formatting and validation summary
-- [ ] Rebuild Executions list:
+- [x] Rebuild Executions list:
   - Status filters
   - Time range filters
   - Sort by newest/running/error
-- [ ] Rebuild Execution detail:
+- [x] Rebuild Execution detail:
   - Interactive DAG node-edge panel with drill-in
   - Task timeline and status badges
   - Inline task controls with guarded confirmations
   - Logs panel with level filter and lazy load
-- [ ] Add Dead Letter page:
+- [x] Add Dead Letter page:
   - FAILED_PERMANENTLY task queue
   - Bulk triage actions (view, retry where valid, annotate)
-- [ ] Add Observability page:
+- [x] Add Observability page:
   - Execution counts by state
   - Task counts by state
   - Average task duration

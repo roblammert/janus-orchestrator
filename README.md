@@ -27,6 +27,7 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 	- Local username/password login and session guard for UI + API.
 	- Shared shell layout with sidebar/header/footer status line.
 	- Theme preferences for all users and admin font-pair selection.
+	- Observability dashboard for metrics and service health.
 	- Workflow version creation and listing.
 	- Execution start/list/detail.
 	- Manual controls: retry, skip, manual-complete, cancel execution.
@@ -73,6 +74,7 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 - `POST /api/tasks/{id}/complete` manual complete with output
 - `GET /api/tasks/{id}/logs` per-task logs
 - `GET /api/metrics/overview` metrics from SQL views
+- `GET /api/health/services` service health summary (web/api/db/fastapi/scheduler/worker)
 
 UI routes:
 
@@ -80,6 +82,8 @@ UI routes:
 - `POST /login` authenticate session
 - `GET /logout` end session
 - `GET /settings` theme preferences and admin font selection
+- `GET /observability` metrics dashboard and service health panel
+- `GET /dead-letters` dead-letter queue triage workspace
 
 ## Environment Variables
 

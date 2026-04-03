@@ -113,4 +113,43 @@ final class TaskService
 
         return $rows;
     }
+
+    public function listDeadLetters(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT t.id, t.execution_id, e.workflow_name, e.workflow_version, t.node_key, t.attempts, t.max_attempts,
+                    t.last_error, t.finished_at, t.updated_at
+             FROM tasks t
+             INNER JOIN executions e ON e.id = t.execution_id
+             WHERE t.status = "FAILED_PERMANENTLY"
+             ORDER BY t.updated_at DESC, t.id DESC'
+        );
+
+        return $stmt->fetchAll();
+    }
+
+    public function annotateTask(int $taskId, string $note, ?int $actorUserId = null): void
+    {
+        if (trim($note) === '') {
+            throw new \InvalidArgumentException('Note is required');
+        }
+
+        $exists = $this->pdo->prepare('SELECT id FROM tasks WHERE id = :id LIMIT 1');
+        $exists->execute(['id' => $taskId]);
+        if (!$exists->fetch()) {
+            throw new \InvalidArgumentException('Task not found');
+        }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO audit_events (actor_user_id, event_type, entity_type, entity_id, details_json)
+             VALUES (:actor_user_id, :event_type, :entity_type, :entity_id, :details_json)'
+        );
+        $stmt->execute([
+            'actor_user_id' => $actorUserId,
+            'event_type' => 'dead_letter_note',
+            'entity_type' => 'task',
+            'entity_id' => $taskId,
+            'details_json' => json_encode(['note' => $note], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]);
+    }
 }

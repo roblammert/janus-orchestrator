@@ -1,6 +1,39 @@
-<section>
+<section id="executions-workspace">
     <h2>Executions</h2>
-    <table>
+    <div class="workflow-toolbar">
+        <label>
+            Status
+            <select id="executions-status-filter">
+                <option value="ALL">All</option>
+                <option value="PENDING">Pending</option>
+                <option value="RUNNING">Running</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="FAILED">Failed</option>
+                <option value="CANCELLED">Cancelled</option>
+                <option value="TIMED_OUT">Timed Out</option>
+            </select>
+        </label>
+        <label>
+            Time Range
+            <select id="executions-time-filter">
+                <option value="all">All time</option>
+                <option value="24h">Last 24h</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+            </select>
+        </label>
+        <label>
+            Sort
+            <select id="executions-sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="running-first">Running first</option>
+                <option value="error-first">Failed/Timed Out first</option>
+            </select>
+        </label>
+    </div>
+
+    <table id="executions-list-table">
         <thead>
         <tr>
             <th>ID</th>
@@ -14,11 +47,15 @@
         </thead>
         <tbody>
         <?php foreach ($executions as $execution): ?>
-            <tr>
+            <tr
+                data-execution-id="<?= (int)$execution['id'] ?>"
+                data-status="<?= htmlspecialchars((string)$execution['status']) ?>"
+                data-started-at="<?= htmlspecialchars((string)($execution['started_at'] ?? '')) ?>"
+            >
                 <td><?= (int)$execution['id'] ?></td>
-                <td><?= htmlspecialchars($execution['workflow_name']) ?></td>
+                <td><?= htmlspecialchars((string)$execution['workflow_name']) ?></td>
                 <td><?= (int)$execution['workflow_version'] ?></td>
-                <td><?= htmlspecialchars($execution['status']) ?></td>
+                <td><?= htmlspecialchars((string)$execution['status']) ?></td>
                 <td><?= htmlspecialchars((string)$execution['started_at']) ?></td>
                 <td><?= htmlspecialchars((string)$execution['finished_at']) ?></td>
                 <td>

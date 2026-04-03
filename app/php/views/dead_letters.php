@@ -1,0 +1,59 @@
+<section id="dead-letters-workspace">
+    <h2>Dead Letters</h2>
+    <p>Inspect permanently failed tasks, annotate triage notes, and retry eligible tasks.</p>
+
+    <div class="workflow-layout">
+        <div class="workflow-list-panel">
+            <div class="dead-letter-toolbar">
+                <button id="dead-letter-refresh-btn" type="button">Refresh</button>
+                <button id="dead-letter-bulk-retry-btn" type="button">Retry Selected</button>
+            </div>
+            <table id="dead-letter-table">
+                <thead>
+                <tr>
+                    <th><input type="checkbox" id="dead-letter-select-all" /></th>
+                    <th>Task ID</th>
+                    <th>Execution</th>
+                    <th>Workflow</th>
+                    <th>Node</th>
+                    <th>Attempts</th>
+                    <th>Error</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($deadLetters as $task): ?>
+                    <tr
+                        data-task-id="<?= (int)$task['id'] ?>"
+                        data-execution-id="<?= (int)$task['execution_id'] ?>"
+                        data-error="<?= htmlspecialchars((string)($task['last_error'] ?? '')) ?>"
+                    >
+                        <td><input type="checkbox" class="dead-letter-select" /></td>
+                        <td><?= (int)$task['id'] ?></td>
+                        <td><a href="/executions/<?= (int)$task['execution_id'] ?>">#<?= (int)$task['execution_id'] ?></a></td>
+                        <td><?= htmlspecialchars((string)$task['workflow_name']) ?> v<?= (int)$task['workflow_version'] ?></td>
+                        <td><?= htmlspecialchars((string)$task['node_key']) ?></td>
+                        <td><?= (int)$task['attempts'] ?>/<?= (int)$task['max_attempts'] ?></td>
+                        <td><?= htmlspecialchars((string)$task['last_error']) ?></td>
+                        <td>
+                            <button class="dead-letter-view-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">View</button>
+                            <button class="dead-letter-retry-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Retry</button>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="workflow-detail-panel">
+            <h3 id="dead-letter-detail-title">Select a dead-letter task</h3>
+            <pre id="dead-letter-detail-viewer">Choose a row to inspect details.</pre>
+
+            <label>
+                Triage Note
+                <textarea id="dead-letter-note" rows="5" placeholder="Capture investigation notes"></textarea>
+            </label>
+            <button id="dead-letter-note-btn" type="button">Save Note</button>
+        </div>
+    </div>
+</section>

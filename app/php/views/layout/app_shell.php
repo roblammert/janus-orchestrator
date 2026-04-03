@@ -77,6 +77,30 @@ $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
         </div>
     </div>
     <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <div id="confirm-modal" class="confirm-modal" hidden>
+        <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+            <h2 id="confirm-modal-title">Confirm Action</h2>
+            <p id="confirm-modal-message">Are you sure?</p>
+            <div class="confirm-modal-actions">
+                <button id="confirm-modal-cancel" type="button">Cancel</button>
+                <button id="confirm-modal-confirm" type="button">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <div id="execution-start-modal" class="confirm-modal" hidden>
+        <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="execution-start-title">
+            <h2 id="execution-start-title">Start Execution</h2>
+            <p>Provide execution input JSON for this workflow.</p>
+            <label>
+                Input JSON
+                <textarea id="execution-start-input" rows="8">{}</textarea>
+            </label>
+            <div class="confirm-modal-actions">
+                <button id="execution-start-cancel" type="button">Cancel</button>
+                <button id="execution-start-confirm" type="button">Start</button>
+            </div>
+        </div>
+    </div>
 <?php endif; ?>
 <script src="/assets/site.js"></script>
 <script src="/assets/app.js"></script>

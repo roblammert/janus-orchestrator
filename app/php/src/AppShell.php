@@ -11,6 +11,8 @@ final class AppShell
         return [
             ['label' => 'Workflows', 'href' => '/'],
             ['label' => 'Executions', 'href' => '/executions'],
+            ['label' => 'Dead Letters', 'href' => '/dead-letters'],
+            ['label' => 'Observability', 'href' => '/observability'],
             ['label' => 'Settings', 'href' => '/settings'],
         ];
     }

@@ -10,4 +10,5 @@ require_once __DIR__ . '/AppShell.php';
 require_once __DIR__ . '/WorkflowService.php';
 require_once __DIR__ . '/ExecutionService.php';
 require_once __DIR__ . '/TaskService.php';
+require_once __DIR__ . '/SystemService.php';
 require_once __DIR__ . '/View.php';

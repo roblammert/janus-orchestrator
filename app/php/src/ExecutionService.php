@@ -125,7 +125,40 @@ final class ExecutionService
             $task['output_json'] = json_decode((string)$task['output_json'], true);
         }
 
+        $statusByNodeKey = [];
+        foreach ($tasks as $task) {
+            $statusByNodeKey[(string)$task['node_key']] = (string)$task['status'];
+        }
+
+        $nodesStmt = $this->pdo->prepare(
+            'SELECT node_key, name, type
+             FROM workflow_nodes
+             WHERE workflow_id = :workflow_id
+             ORDER BY id ASC'
+        );
+        $nodesStmt->execute(['workflow_id' => (int)$execution['workflow_id']]);
+        $dagNodes = $nodesStmt->fetchAll();
+
+        foreach ($dagNodes as &$node) {
+            $node['status'] = $statusByNodeKey[(string)$node['node_key']] ?? 'PENDING';
+        }
+
+        $edgesStmt = $this->pdo->prepare(
+            'SELECT f.node_key AS from_node_key, t.node_key AS to_node_key
+             FROM workflow_edges e
+             INNER JOIN workflow_nodes f ON f.id = e.from_node_id
+             INNER JOIN workflow_nodes t ON t.id = e.to_node_id
+             WHERE e.workflow_id = :workflow_id
+             ORDER BY e.id ASC'
+        );
+        $edgesStmt->execute(['workflow_id' => (int)$execution['workflow_id']]);
+        $dagEdges = $edgesStmt->fetchAll();
+
         $execution['tasks'] = $tasks;
+        $execution['dag'] = [
+            'nodes' => $dagNodes,
+            'edges' => $dagEdges,
+        ];
         return $execution;
     }
 
