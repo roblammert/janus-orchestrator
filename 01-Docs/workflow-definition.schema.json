@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://janus-orchestrator.local/schema/workflow-definition.json",
+  "title": "Janus Workflow Definition",
+  "type": "object",
+  "required": ["name", "version", "nodes", "edges"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 190
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400,
+      "default": 3600
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["key", "name", "type", "config"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 190
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 190
+          },
+          "type": {
+            "type": "string",
+            "enum": ["HTTP", "SCRIPT", "FILE_WRITER"]
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400,
+            "default": 60
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 3
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 100
+          },
+          "config": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

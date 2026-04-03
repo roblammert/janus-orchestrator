@@ -1,0 +1,186 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Janus;
+
+use PDO;
+
+final class ExecutionService
+{
+    public function __construct(private readonly PDO $pdo)
+    {
+    }
+
+    public function startExecution(int $workflowId, array $input): array
+    {
+        $workflowStmt = $this->pdo->prepare('SELECT * FROM workflows WHERE id = :id');
+        $workflowStmt->execute(['id' => $workflowId]);
+        $workflow = $workflowStmt->fetch();
+        if (!$workflow) {
+            throw new \InvalidArgumentException('Workflow not found');
+        }
+
+        $definition = json_decode((string)$workflow['definition_json'], true);
+        $timeoutSeconds = (int)($definition['timeout_seconds'] ?? Config::workflowDefaultTimeoutSeconds());
+
+        $this->pdo->beginTransaction();
+        try {
+            $executionStmt = $this->pdo->prepare(
+                'INSERT INTO executions (workflow_id, workflow_name, workflow_version, status, input_json, started_at, timeout_at)
+                 VALUES (:workflow_id, :workflow_name, :workflow_version, :status, :input_json, NOW(), DATE_ADD(NOW(), INTERVAL :timeout SECOND))'
+            );
+            $executionStmt->bindValue(':workflow_id', $workflowId, PDO::PARAM_INT);
+            $executionStmt->bindValue(':workflow_name', $workflow['name']);
+            $executionStmt->bindValue(':workflow_version', (int)$workflow['version'], PDO::PARAM_INT);
+            $executionStmt->bindValue(':status', 'RUNNING');
+            $executionStmt->bindValue(':input_json', json_encode($input, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $executionStmt->bindValue(':timeout', $timeoutSeconds, PDO::PARAM_INT);
+            $executionStmt->execute();
+
+            $executionId = (int)$this->pdo->lastInsertId();
+
+            $nodeStmt = $this->pdo->prepare('SELECT * FROM workflow_nodes WHERE workflow_id = :workflow_id');
+            $nodeStmt->execute(['workflow_id' => $workflowId]);
+            $nodes = $nodeStmt->fetchAll();
+
+            $taskStmt = $this->pdo->prepare(
+                'INSERT INTO tasks (
+                    execution_id, workflow_id, workflow_node_id, node_key, status, attempts, max_attempts,
+                    priority, scheduled_at, idempotency_key
+                 ) VALUES (
+                    :execution_id, :workflow_id, :workflow_node_id, :node_key, :status, 0, :max_attempts,
+                    :priority, NOW(), :idempotency_key
+                 )'
+            );
+
+            foreach ($nodes as $node) {
+                $taskStmt->execute([
+                    'execution_id' => $executionId,
+                    'workflow_id' => $workflowId,
+                    'workflow_node_id' => (int)$node['id'],
+                    'node_key' => $node['node_key'],
+                    'status' => 'PENDING',
+                    'max_attempts' => (int)$node['max_attempts'],
+                    'priority' => (int)$node['priority'],
+                    'idempotency_key' => hash('sha256', $executionId . ':' . $node['node_key']),
+                ]);
+            }
+
+            $transitionStmt = $this->pdo->prepare(
+                'INSERT INTO state_transitions (entity_type, entity_id, from_state, to_state, metadata_json)
+                 VALUES (\'execution\', :entity_id, NULL, :to_state, :metadata_json)'
+            );
+            $transitionStmt->execute([
+                'entity_id' => $executionId,
+                'to_state' => 'RUNNING',
+                'metadata_json' => json_encode(['reason' => 'execution_started']),
+            ]);
+
+            $this->pdo->commit();
+
+            return ['execution_id' => $executionId, 'status' => 'RUNNING'];
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    public function listExecutions(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT id, workflow_name, workflow_version, status, created_at, started_at, finished_at
+             FROM executions
+             ORDER BY id DESC'
+        );
+
+        return $stmt->fetchAll();
+    }
+
+    public function getExecutionDetails(int $executionId): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM executions WHERE id = :id');
+        $stmt->execute(['id' => $executionId]);
+        $execution = $stmt->fetch();
+
+        if (!$execution) {
+            return null;
+        }
+
+        $execution['input_json'] = json_decode((string)$execution['input_json'], true);
+        $execution['output_json'] = json_decode((string)$execution['output_json'], true);
+
+        $tasksStmt = $this->pdo->prepare(
+            'SELECT t.id, t.node_key, wn.name AS node_name, wn.type AS node_type, t.status, t.attempts, t.max_attempts,
+                    t.scheduled_at, t.started_at, t.finished_at, t.last_error, t.output_json
+             FROM tasks t
+             INNER JOIN workflow_nodes wn ON wn.id = t.workflow_node_id
+             WHERE t.execution_id = :execution_id
+             ORDER BY t.id ASC'
+        );
+        $tasksStmt->execute(['execution_id' => $executionId]);
+        $tasks = $tasksStmt->fetchAll();
+
+        foreach ($tasks as &$task) {
+            $task['output_json'] = json_decode((string)$task['output_json'], true);
+        }
+
+        $execution['tasks'] = $tasks;
+        return $execution;
+    }
+
+    public function cancelExecution(int $executionId): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $updateExecution = $this->pdo->prepare(
+                'UPDATE executions
+                 SET status = \"CANCELLED\", cancelled_at = NOW(), finished_at = NOW()
+                 WHERE id = :id AND status IN (\"PENDING\", \"RUNNING\")'
+            );
+            $updateExecution->execute(['id' => $executionId]);
+
+            $updateTasks = $this->pdo->prepare(
+                'UPDATE tasks
+                 SET status = \"SKIPPED\", finished_at = NOW(), last_error = \"Execution cancelled manually\"
+                 WHERE execution_id = :execution_id AND status IN (\"PENDING\", \"READY\", \"RUNNING\", \"FAILED\")'
+            );
+            $updateTasks->execute(['execution_id' => $executionId]);
+
+            $cleanupQueue = $this->pdo->prepare(
+                'DELETE q FROM task_queue q
+                 INNER JOIN tasks t ON t.id = q.task_id
+                 WHERE t.execution_id = :execution_id'
+            );
+            $cleanupQueue->execute(['execution_id' => $executionId]);
+
+            $transitionStmt = $this->pdo->prepare(
+                'INSERT INTO state_transitions (entity_type, entity_id, from_state, to_state, metadata_json)
+                 VALUES (\'execution\', :entity_id, NULL, :to_state, :metadata_json)'
+            );
+            $transitionStmt->execute([
+                'entity_id' => $executionId,
+                'to_state' => 'CANCELLED',
+                'metadata_json' => json_encode(['reason' => 'manual_cancel']),
+            ]);
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    public function metricsOverview(): array
+    {
+        $executions = $this->pdo->query('SELECT * FROM v_execution_counts_by_status')->fetchAll();
+        $tasks = $this->pdo->query('SELECT * FROM v_task_counts_by_status')->fetchAll();
+        $avgRow = $this->pdo->query('SELECT * FROM v_avg_task_duration_seconds')->fetch();
+
+        return [
+            'execution_counts' => $executions,
+            'task_counts' => $tasks,
+            'avg_task_duration_seconds' => (float)$avgRow['avg_duration_seconds'],
+        ];
+    }
+}

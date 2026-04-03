@@ -1,0 +1,45 @@
+# Tests
+
+## Python tests
+
+Run from repository root:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install pytest
+pytest tests/python -q
+```
+
+## API integration smoke tests
+
+These tests call the live API and validate:
+
+- Execution lifecycle (start and cancel)
+- Manual task controls (retry, skip, complete)
+- Task logs endpoint
+
+Prerequisites:
+
+1. Janus API is running (default `http://127.0.0.1:8811`).
+2. Your external MySQL server is reachable by the running app.
+
+Run:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install pytest
+JANUS_BASE_URL=http://127.0.0.1:8811 pytest tests/python/test_api_integration_smoke.py -q
+```
+
+Optional:
+
+- `JANUS_API_TIMEOUT_SECONDS` (default `10`)
+
+## API smoke checks (manual)
+
+1. Create workflow with `POST /api/workflows`.
+2. Start execution with `POST /api/executions`.
+3. Verify task transitions with `GET /api/executions/{id}`.
+4. Verify manual controls for retry/skip/complete/cancel.
