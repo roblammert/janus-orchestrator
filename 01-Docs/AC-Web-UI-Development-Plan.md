@@ -43,13 +43,13 @@ Reference inspiration (read-only):
 ## Phased Checklist
 
 ### Phase 0 - Design Foundation and Information Architecture
-- [ ] Define target IA for authenticated app areas.
-- [ ] Define visual tokens (spacing, typography, colors, elevations, states).
-- [ ] Define status system (task and execution badges, semantic colors, iconography).
-- [ ] Define interaction system (buttons, form controls, tables, cards, modal, toast).
-- [ ] Define responsive breakpoints and behavior for sidebar collapse.
-- [ ] Define accessibility standards (focus ring, contrast, keyboard navigation, labels).
-- [ ] Produce wireframes for 5 key pages:
+- [x] Define target IA for authenticated app areas.
+- [x] Define visual tokens (spacing, typography, colors, elevations, states).
+- [x] Define status system (task and execution badges, semantic colors, iconography).
+- [x] Define interaction system (buttons, form controls, tables, cards, modal, toast).
+- [x] Define responsive breakpoints and behavior for sidebar collapse.
+- [x] Define accessibility standards (focus ring, contrast, keyboard navigation, labels).
+- [x] Produce wireframes for 5 key pages:
   - Workflows list and version detail
   - Execution list
   - Execution detail and task controls
@@ -58,6 +58,7 @@ Reference inspiration (read-only):
 
 Definition of done:
 - UI specification documented in 01-Docs.
+- Phase 0 artifact: 01-Docs/AD-Phase0-UI-Specification.md.
 - No implementation yet, only agreed UX and component rules.
 
 ### Phase 1 - Shared AppShell and Frontend Architecture
