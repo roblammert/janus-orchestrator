@@ -21,6 +21,7 @@ These tests call the live API and validate:
 - Filter/pagination metadata contracts on list endpoints
 - Audit events endpoint contract
 - Authenticated UI route shell rendering smoke checks
+- Phase 5 UI control rendering checks (refresh/export/poll indicators, trend chart and diagnostics placeholders)
 
 Prerequisites:
 
@@ -34,7 +35,7 @@ Run:
 python3 -m venv .venv
 . .venv/bin/activate
 pip install pytest
-JANUS_BASE_URL=http://127.0.0.1:8811 pytest tests/python/test_api_integration_smoke.py -q
+JANUS_BASE_URL=http://127.0.0.1:8811 .venv/bin/python -m pytest tests/python/test_api_integration_smoke.py -q
 ```
 
 Optional:

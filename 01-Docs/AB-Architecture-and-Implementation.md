@@ -114,3 +114,19 @@ Supervisor manages:
 - `worker`
 
 All are restartable and isolated by process name for troubleshooting.
+
+## 11. UI Reliability and Operations UX (Phase 5)
+
+- Server-rendered pages are progressively enhanced with `public/assets/app.js` and global utilities in `public/assets/site.js`.
+- Reliability-focused UX patterns now include:
+  - Polling indicators and explicit refresh actions for operations pages.
+  - Empty/loading/skeleton states for data surfaces.
+  - Confirmation flows with impact language for manual controls.
+  - CSV export for workflows, executions, tasks, logs, and dead letters.
+  - Keyboard shortcuts for common operator actions.
+- Frontend performance guardrails:
+  - Incremental rendering for large log payloads.
+  - Virtualized/contained row rendering strategies for larger tables.
+- Observability UX additions:
+  - Trend charts (throughput, failure/retry pressure, latency).
+  - UI diagnostics panel wired to request ID and API latency metadata.

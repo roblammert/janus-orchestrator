@@ -11,6 +11,120 @@ function statusPillMarkup(statusRaw) {
   return `<span class="status-pill status-${statusClassFromValue(status)}">${status}</span>`;
 }
 
+function setPollIndicator(id, text, kind = 'idle') {
+  const node = document.getElementById(id);
+  if (!node) return;
+  node.textContent = text;
+  node.classList.remove('status-info', 'status-warning', 'status-danger');
+  if (kind === 'busy') node.classList.add('status-info');
+  if (kind === 'warn') node.classList.add('status-warning');
+  if (kind === 'error') node.classList.add('status-danger');
+}
+
+function setLoadingState(node, isLoading) {
+  if (!node) return;
+  node.classList.toggle('skeleton-loading', isLoading);
+}
+
+function setEmptyState(id, visible, text) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  node.hidden = !visible;
+  if (text) node.textContent = text;
+}
+
+function asCsvCell(value) {
+  const text = String(value ?? '');
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const csv = [headers, ...rows].map((row) => row.map(asCsvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function applyVirtualizedRows(tbody, allRows, stateKey) {
+  if (!tbody) return;
+  const pageSize = 150;
+  if (!window.__janusVirtual) window.__janusVirtual = {};
+  if (!window.__janusVirtual[stateKey]) window.__janusVirtual[stateKey] = { visible: pageSize };
+  const state = window.__janusVirtual[stateKey];
+
+  allRows.forEach((row, index) => {
+    row.hidden = index >= state.visible;
+  });
+
+  let loadMoreBtn = tbody.parentElement?.parentElement?.querySelector(`[data-load-more="${stateKey}"]`);
+  const hasMore = allRows.length > state.visible;
+  if (!loadMoreBtn && hasMore) {
+    loadMoreBtn = document.createElement('button');
+    loadMoreBtn.type = 'button';
+    loadMoreBtn.dataset.loadMore = stateKey;
+    loadMoreBtn.textContent = 'Load More';
+    loadMoreBtn.addEventListener('click', () => {
+      state.visible += pageSize;
+      applyVirtualizedRows(tbody, allRows, stateKey);
+    });
+    tbody.parentElement?.parentElement?.appendChild(loadMoreBtn);
+  }
+
+  if (loadMoreBtn) {
+    loadMoreBtn.hidden = !hasMore;
+  }
+}
+
+function renderLineChart(svg, values, stroke) {
+  if (!svg) return;
+  const width = 320;
+  const height = 120;
+  const pad = 10;
+  const safeValues = values.length > 0 ? values : [0];
+  const max = Math.max(...safeValues, 1);
+
+  const points = safeValues.map((value, index) => {
+    const x = pad + ((width - 2 * pad) * (safeValues.length <= 1 ? 0 : index / (safeValues.length - 1)));
+    const y = height - pad - ((height - 2 * pad) * (value / max));
+    return `${x},${y}`;
+  }).join(' ');
+
+  svg.innerHTML = `
+    <polyline points="${points}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="var(--color-border)" stroke-width="1"></line>
+  `;
+}
+
+function formatNowTime() {
+  const d = new Date();
+  return d.toLocaleTimeString();
+}
+
+function withBusyIndicator(button, indicatorId, pendingText, doneText, fn) {
+  return async () => {
+    if (button) button.disabled = true;
+    setPollIndicator(indicatorId, pendingText, 'busy');
+    try {
+      await fn();
+      setPollIndicator(indicatorId, `${doneText} ${formatNowTime()}`, 'idle');
+    } catch (error) {
+      setPollIndicator(indicatorId, `Error: ${error.message}`, 'error');
+      throw error;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  };
+}
+
 function confirmAction(message) {
   return new Promise((resolve) => {
     const modal = document.getElementById('confirm-modal');
@@ -133,7 +247,7 @@ function bindCreateWorkflow() {
       await api('/api/workflows', 'POST', {
         name: fd.get('name'),
         description: fd.get('description'),
-        definition
+        definition,
       });
       window.JanusUI.showToast('Workflow version created', 'success');
       window.location.reload();
@@ -180,7 +294,7 @@ function workflowDefinitionSummary(definition) {
     nodes: nodes.length,
     edges: edges.length,
     timeoutSeconds: Number(definition?.timeout_seconds || 0),
-    issues
+    issues,
   };
 }
 
@@ -195,19 +309,21 @@ function bindWorkflowsWorkspace() {
   const summary = document.getElementById('workflow-validation-summary');
   const versionList = document.getElementById('workflow-version-list');
   const viewer = document.getElementById('workflow-definition-viewer');
+  const refreshBtn = document.getElementById('workflow-refresh-btn');
+  const exportBtn = document.getElementById('workflow-export-csv-btn');
   if (!table || !searchInput || !sortSelect || !title || !summary || !versionList || !viewer) return;
 
   const tbody = table.querySelector('tbody');
   if (!tbody) return;
 
-  const rows = Array.from(tbody.querySelectorAll('tr'));
+  let rows = Array.from(tbody.querySelectorAll('tr'));
   let selectedWorkflowName = null;
 
   function parseRowData(row) {
     return {
       name: String(row.dataset.workflowName || ''),
       latestVersion: Number(row.dataset.latestVersion || 0),
-      versionsCount: Number(row.dataset.versionsCount || 0)
+      versionsCount: Number(row.dataset.versionsCount || 0),
     };
   }
 
@@ -233,13 +349,23 @@ function bindWorkflowsWorkspace() {
     });
 
     filtered.forEach((row) => tbody.appendChild(row));
+    applyVirtualizedRows(tbody, filtered, 'workflows');
+    setEmptyState('workflow-empty-state', filtered.length === 0);
 
     if (filtered.length > 0 && !selectedWorkflowName) {
       selectWorkflow(filtered[0].dataset.workflowName || '');
     }
   }
 
-  function renderVersionList(name, versions) {
+  function bindRowClickHandlers() {
+    rows.forEach((row) => {
+      row.addEventListener('click', () => {
+        selectWorkflow(String(row.dataset.workflowName || ''));
+      });
+    });
+  }
+
+  function renderVersionList(versions) {
     versionList.innerHTML = '';
 
     if (!Array.isArray(versions) || versions.length === 0) {
@@ -287,7 +413,7 @@ function bindWorkflowsWorkspace() {
 
     try {
       const versions = await api(`/api/workflows/by-name/${encodeURIComponent(name)}`);
-      renderVersionList(name, versions);
+      renderVersionList(versions);
     } catch (error) {
       summary.textContent = '';
       viewer.textContent = error.message;
@@ -295,14 +421,49 @@ function bindWorkflowsWorkspace() {
     }
   }
 
-  rows.forEach((row) => {
-    row.addEventListener('click', () => {
-      selectWorkflow(String(row.dataset.workflowName || ''));
+  async function refreshWorkflows() {
+    setLoadingState(table, true);
+    const page = await api('/api/workflows?page=1&page_size=500');
+    tbody.innerHTML = '';
+    page.forEach((workflow) => {
+      const tr = document.createElement('tr');
+      tr.dataset.workflowName = String(workflow.name || '');
+      tr.dataset.latestVersion = String(workflow.latest_version || 0);
+      tr.dataset.versionsCount = String(workflow.versions_count || 0);
+      tr.innerHTML = `
+        <td>${workflow.name}</td>
+        <td>${workflow.latest_version}</td>
+        <td>${workflow.versions_count}</td>
+        <td><a href="/workflows/${encodeURIComponent(workflow.name)}">Legacy view</a></td>
+      `;
+      tbody.appendChild(tr);
     });
-  });
+    rows = Array.from(tbody.querySelectorAll('tr'));
+    bindRowClickHandlers();
+    applyFilterAndSort();
+    setLoadingState(table, false);
+  }
 
+  bindRowClickHandlers();
   searchInput.addEventListener('input', applyFilterAndSort);
   sortSelect.addEventListener('change', applyFilterAndSort);
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', withBusyIndicator(refreshBtn, 'workflow-poll-indicator', 'Refreshing...', 'Updated', refreshWorkflows));
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const visible = rows.filter((row) => row.style.display !== 'none');
+      const csvRows = visible.map((row) => [
+        row.dataset.workflowName || '',
+        row.dataset.latestVersion || '',
+        row.dataset.versionsCount || '',
+      ]);
+      downloadCsv('workflows.csv', ['name', 'latest_version', 'versions_count'], csvRows);
+    });
+  }
+
   applyFilterAndSort();
 }
 
@@ -314,7 +475,7 @@ function bindStartExecution() {
         const input = await collectExecutionInput();
         const result = await api('/api/executions', 'POST', {
           workflow_id: workflowId,
-          input
+          input,
         });
         window.JanusUI.showToast('Execution started', 'success');
         window.location.href = `/executions/${result.execution_id}`;
@@ -333,33 +494,75 @@ function bindObservabilityWorkspace() {
   const taskNode = document.getElementById('obs-task-counts');
   const avgNode = document.getElementById('obs-avg-duration');
   const healthTable = document.getElementById('obs-health-table');
+  const refreshBtn = document.getElementById('observability-refresh-btn');
+
+  const throughputTrend = [];
+  const failureTrend = [];
+  const latencyTrend = [];
+
+  function pushTrend(arr, value) {
+    arr.push(Number(value || 0));
+    while (arr.length > 24) arr.shift();
+  }
+
+  function renderDiagnostics() {
+    const diag = window.JanusUI.getDiagnostics();
+    const apiNode = document.getElementById('diag-last-api');
+    const reqNode = document.getElementById('diag-request-id');
+    const latencyNode = document.getElementById('diag-latency');
+    const updatedNode = document.getElementById('diag-updated-at');
+    if (apiNode) apiNode.textContent = diag.lastApi;
+    if (reqNode) reqNode.textContent = diag.requestId;
+    if (latencyNode) latencyNode.textContent = diag.latencyMs == null ? 'n/a' : `${diag.latencyMs}ms`;
+    if (updatedNode) updatedNode.textContent = diag.updatedAt ? new Date(diag.updatedAt).toLocaleString() : 'n/a';
+  }
 
   async function loadMetrics() {
+    setLoadingState(executionNode, true);
+    setLoadingState(taskNode, true);
     try {
       const payload = await api('/api/metrics/overview');
+      const executionCounts = payload.execution_counts || [];
+      const taskCounts = payload.task_counts || [];
       if (executionNode) {
-        executionNode.textContent = (payload.execution_counts || [])
-          .map((item) => `${item.status}: ${item.count}`)
-          .join('\n') || 'No execution data';
+        executionNode.textContent = executionCounts.map((item) => `${item.status}: ${item.count}`).join('\n') || 'No execution data';
       }
       if (taskNode) {
-        taskNode.textContent = (payload.task_counts || [])
-          .map((item) => `${item.status}: ${item.count}`)
-          .join('\n') || 'No task data';
+        taskNode.textContent = taskCounts.map((item) => `${item.status}: ${item.count}`).join('\n') || 'No task data';
       }
       if (avgNode) {
         avgNode.textContent = String(payload.avg_task_duration_seconds ?? 'n/a');
       }
+
+      const throughput = executionCounts.reduce((acc, item) => acc + Number(item.count || 0), 0);
+      const failed = executionCounts
+        .filter((item) => ['FAILED', 'TIMED_OUT', 'CANCELLED'].includes(String(item.status || '').toUpperCase()))
+        .reduce((acc, item) => acc + Number(item.count || 0), 0);
+      const retryPressure = taskCounts
+        .filter((item) => ['FAILED', 'FAILED_PERMANENTLY', 'READY'].includes(String(item.status || '').toUpperCase()))
+        .reduce((acc, item) => acc + Number(item.count || 0), 0);
+
+      pushTrend(throughputTrend, throughput);
+      pushTrend(failureTrend, failed + retryPressure);
+      pushTrend(latencyTrend, Number(payload.avg_task_duration_seconds || 0));
+
+      renderLineChart(document.getElementById('obs-trend-throughput'), throughputTrend, 'var(--color-info)');
+      renderLineChart(document.getElementById('obs-trend-failure'), failureTrend, 'var(--color-danger)');
+      renderLineChart(document.getElementById('obs-trend-latency'), latencyTrend, 'var(--color-warning)');
     } catch (error) {
       if (executionNode) executionNode.textContent = error.message;
       if (taskNode) taskNode.textContent = error.message;
       if (avgNode) avgNode.textContent = 'n/a';
+    } finally {
+      setLoadingState(executionNode, false);
+      setLoadingState(taskNode, false);
     }
   }
 
   async function loadHealth() {
     if (!healthTable) return;
 
+    setLoadingState(healthTable, true);
     try {
       const health = await api('/api/health/services');
       const mapping = [
@@ -368,7 +571,7 @@ function bindObservabilityWorkspace() {
         ['DB', health.db],
         ['FastAPI', health.fastapi],
         ['Scheduler', health.scheduler],
-        ['Worker', health.worker]
+        ['Worker', health.worker],
       ];
 
       const body = healthTable.querySelector('tbody');
@@ -388,11 +591,30 @@ function bindObservabilityWorkspace() {
       const body = healthTable.querySelector('tbody');
       if (!body) return;
       body.innerHTML = `<tr><td colspan="3">${error.message}</td></tr>`;
+    } finally {
+      setLoadingState(healthTable, false);
     }
   }
 
-  loadMetrics();
-  loadHealth();
+  async function refreshAll() {
+    await Promise.all([loadMetrics(), loadHealth()]);
+    renderDiagnostics();
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', withBusyIndicator(refreshBtn, 'observability-poll-indicator', 'Refreshing...', 'Updated', refreshAll));
+  }
+
+  document.addEventListener('janus:diagnostics', renderDiagnostics);
+  refreshAll();
+  setInterval(() => {
+    setPollIndicator('observability-poll-indicator', 'Polling...', 'busy');
+    refreshAll().then(() => {
+      setPollIndicator('observability-poll-indicator', `Updated ${formatNowTime()}`, 'idle');
+    }).catch(() => {
+      setPollIndicator('observability-poll-indicator', 'Polling error', 'error');
+    });
+  }, 15000);
 }
 
 function bindExecutionsWorkspace() {
@@ -403,22 +625,20 @@ function bindExecutionsWorkspace() {
   const statusFilter = document.getElementById('executions-status-filter');
   const timeFilter = document.getElementById('executions-time-filter');
   const sortSelect = document.getElementById('executions-sort');
+  const refreshBtn = document.getElementById('executions-refresh-btn');
+  const exportBtn = document.getElementById('executions-export-csv-btn');
   if (!table || !statusFilter || !timeFilter || !sortSelect) return;
 
   const tbody = table.querySelector('tbody');
   if (!tbody) return;
 
-  const rows = Array.from(tbody.querySelectorAll('tr'));
+  let rows = Array.from(tbody.querySelectorAll('tr'));
 
   function withinRange(startedAtRaw, rangeMode) {
-    if (!startedAtRaw || rangeMode === 'all') {
-      return true;
-    }
+    if (!startedAtRaw || rangeMode === 'all') return true;
 
     const startedAt = new Date(startedAtRaw.replace(' ', 'T') + 'Z');
-    if (Number.isNaN(startedAt.getTime())) {
-      return true;
-    }
+    if (Number.isNaN(startedAt.getTime())) return true;
 
     const now = Date.now();
     const ageMs = now - startedAt.getTime();
@@ -469,20 +689,85 @@ function bindExecutionsWorkspace() {
         if (p !== 0) return p;
       }
 
-      if (sortMode === 'oldest') {
-        return idA - idB;
-      }
-
+      if (sortMode === 'oldest') return idA - idB;
       return idB - idA;
     });
 
     filtered.forEach((row) => tbody.appendChild(row));
+    applyVirtualizedRows(tbody, filtered, 'executions');
+    setEmptyState('executions-empty-state', filtered.length === 0);
+  }
+
+  async function refreshExecutions() {
+    setLoadingState(table, true);
+    const query = new URLSearchParams({
+      page: '1',
+      page_size: '500',
+      sort: 'id_desc',
+    });
+    const list = await api(`/api/executions?${query.toString()}`);
+    tbody.innerHTML = '';
+
+    list.forEach((execution) => {
+      const tr = document.createElement('tr');
+      tr.dataset.executionId = String(execution.id || 0);
+      tr.dataset.status = String(execution.status || '');
+      tr.dataset.startedAt = String(execution.started_at || '');
+      tr.innerHTML = `
+        <td>${execution.id}</td>
+        <td>${execution.workflow_name}</td>
+        <td>${execution.workflow_version}</td>
+        <td>${statusPillMarkup(execution.status)}</td>
+        <td>${execution.started_at || ''}</td>
+        <td>${execution.finished_at || ''}</td>
+        <td><a href="/executions/${execution.id}">View</a></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    rows = Array.from(tbody.querySelectorAll('tr'));
+    bindExecutionCancelButtons();
+    applyFilters();
+    setLoadingState(table, false);
   }
 
   statusFilter.addEventListener('change', applyFilters);
   timeFilter.addEventListener('change', applyFilters);
   sortSelect.addEventListener('change', applyFilters);
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', withBusyIndicator(refreshBtn, 'executions-poll-indicator', 'Refreshing...', 'Updated', refreshExecutions));
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const visible = rows.filter((row) => row.style.display !== 'none');
+      const csvRows = visible.map((row) => {
+        const cells = row.querySelectorAll('td');
+        return [
+          cells[0]?.textContent?.trim() || '',
+          cells[1]?.textContent?.trim() || '',
+          cells[2]?.textContent?.trim() || '',
+          cells[3]?.textContent?.trim() || '',
+          cells[4]?.textContent?.trim() || '',
+          cells[5]?.textContent?.trim() || '',
+        ];
+      });
+      downloadCsv('executions.csv', ['id', 'workflow', 'version', 'status', 'started_at', 'finished_at'], csvRows);
+    });
+  }
+
   applyFilters();
+  setInterval(() => {
+    if (!document.hidden) {
+      setPollIndicator('executions-poll-indicator', 'Polling...', 'busy');
+      refreshExecutions().then(() => {
+        setPollIndicator('executions-poll-indicator', `Updated ${formatNowTime()}`);
+      }).catch(() => {
+        setPollIndicator('executions-poll-indicator', 'Polling error', 'error');
+      });
+    }
+  }, 20000);
 }
 
 function bindExecutionCancelButtons() {
@@ -523,20 +808,50 @@ function bindTaskButtons() {
   const logViewer = document.getElementById('task-log-viewer');
   const logLevelFilter = document.getElementById('task-log-level-filter');
   const loadMoreBtn = document.getElementById('task-log-load-more');
+  const exportLogsBtn = document.getElementById('task-log-export-csv-btn');
+  const exportTasksBtn = document.getElementById('execution-export-tasks-csv-btn');
+  const refreshBtn = document.getElementById('execution-refresh-btn');
   const timeline = document.getElementById('execution-timeline');
   const dagPanel = document.getElementById('execution-dag-panel');
+  const taskLogState = document.getElementById('task-log-state');
 
   let loadedLogs = [];
   let visibleLogCount = 40;
+
+  function renderLogsIncremental(lines) {
+    if (!logViewer) return;
+    logViewer.textContent = '';
+    let cursor = 0;
+    const chunkSize = 150;
+
+    function tick() {
+      const slice = lines.slice(cursor, cursor + chunkSize);
+      if (slice.length > 0) {
+        logViewer.textContent += (cursor === 0 ? '' : '\n') + slice.join('\n');
+        cursor += slice.length;
+      }
+      if (cursor < lines.length) {
+        window.requestAnimationFrame(tick);
+      }
+    }
+
+    window.requestAnimationFrame(tick);
+  }
 
   function renderLogs() {
     if (!logViewer) return;
     const selectedLevel = logLevelFilter ? logLevelFilter.value : 'ALL';
     const filtered = loadedLogs.filter((log) => selectedLevel === 'ALL' || String(log.level) === selectedLevel);
     const visible = filtered.slice(0, visibleLogCount);
-    logViewer.textContent = visible
-      .map((log) => `${log.created_at} [${log.level}] ${log.message}`)
-      .join('\n');
+
+    const lines = visible.map((log) => `${log.created_at} [${log.level}] ${log.message}`);
+    if (lines.length === 0) {
+      logViewer.textContent = 'No logs for this filter yet.';
+      if (taskLogState) taskLogState.textContent = 'No log rows for current level filter.';
+    } else {
+      renderLogsIncremental(lines);
+      if (taskLogState) taskLogState.textContent = `Showing ${visible.length} of ${filtered.length} logs`;
+    }
 
     if (loadMoreBtn) {
       loadMoreBtn.disabled = visible.length >= filtered.length;
@@ -554,12 +869,8 @@ function bindTaskButtons() {
       const statusCell = row.querySelector('.task-status');
       const status = statusCell ? statusCell.textContent : '';
 
-      if (startedAt) {
-        events.push({ at: startedAt, text: `${nodeKey} started` });
-      }
-      if (finishedAt) {
-        events.push({ at: finishedAt, text: `${nodeKey} finished (${status})` });
-      }
+      if (startedAt) events.push({ at: startedAt, text: `${nodeKey} started` });
+      if (finishedAt) events.push({ at: finishedAt, text: `${nodeKey} finished (${status})` });
     });
 
     events.sort((a, b) => String(a.at).localeCompare(String(b.at)));
@@ -580,9 +891,21 @@ function bindTaskButtons() {
     });
   }
 
+  async function refreshExecutionWorkspace() {
+    setPollIndicator('execution-poll-indicator', 'Live updates: refreshing...', 'busy');
+    await refreshExecutionTasks();
+    buildTimeline();
+    setPollIndicator('execution-poll-indicator', `Live updates: refreshed ${formatNowTime()}`);
+  }
+
   if (executionWorkspace) {
     buildTimeline();
     bindDagNodeSelection();
+    setEmptyState('execution-tasks-empty-state', document.querySelectorAll('#execution-tasks-table tbody tr').length === 0);
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', refreshExecutionWorkspace);
   }
 
   if (logLevelFilter) {
@@ -599,6 +922,32 @@ function bindTaskButtons() {
     });
   }
 
+  if (exportLogsBtn) {
+    exportLogsBtn.addEventListener('click', () => {
+      const selectedLevel = logLevelFilter ? logLevelFilter.value : 'ALL';
+      const filtered = loadedLogs.filter((log) => selectedLevel === 'ALL' || String(log.level) === selectedLevel);
+      const rows = filtered.map((log) => [log.created_at, log.level, log.message]);
+      downloadCsv('task-logs.csv', ['created_at', 'level', 'message'], rows);
+    });
+  }
+
+  if (exportTasksBtn) {
+    exportTasksBtn.addEventListener('click', () => {
+      const rows = Array.from(document.querySelectorAll('#execution-tasks-table tbody tr')).map((row) => {
+        const cells = row.querySelectorAll('td');
+        return [
+          cells[0]?.textContent?.trim() || '',
+          cells[1]?.textContent?.trim() || '',
+          cells[2]?.textContent?.trim() || '',
+          cells[3]?.textContent?.trim() || '',
+          cells[4]?.textContent?.trim() || '',
+          cells[5]?.textContent?.trim() || '',
+        ];
+      });
+      downloadCsv('execution-tasks.csv', ['task_id', 'node_key', 'type', 'status', 'attempts', 'error'], rows);
+    });
+  }
+
   document.querySelectorAll('.task-retry-btn').forEach((button) => {
     button.addEventListener('click', async () => {
       const ok = await confirmAction('Retry this task? Impact: it will re-enter the queue and may execute external side effects again.');
@@ -606,7 +955,7 @@ function bindTaskButtons() {
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/retry`, 'POST');
         window.JanusUI.showToast('Task queued for retry', 'success');
-        refreshExecutionTasks();
+        refreshExecutionWorkspace();
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -620,7 +969,7 @@ function bindTaskButtons() {
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/skip`, 'POST', { reason: 'Skipped manually' });
         window.JanusUI.showToast('Task skipped', 'success');
-        refreshExecutionTasks();
+        refreshExecutionWorkspace();
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -635,7 +984,7 @@ function bindTaskButtons() {
         const output = { manual: true, source: 'ui' };
         await api(`/api/tasks/${Number(button.dataset.taskId)}/complete`, 'POST', { output });
         window.JanusUI.showToast('Task manually completed', 'success');
-        refreshExecutionTasks();
+        refreshExecutionWorkspace();
       } catch (error) {
         window.JanusUI.showToast(error.message, 'error');
       }
@@ -648,11 +997,16 @@ function bindTaskButtons() {
       if (!logViewer) return;
 
       try {
+        if (taskLogState) taskLogState.textContent = `Loading task #${taskId} logs...`;
+        setLoadingState(logViewer, true);
         loadedLogs = await api(`/api/tasks/${taskId}/logs`);
         visibleLogCount = 40;
         renderLogs();
       } catch (error) {
         logViewer.textContent = error.message;
+        if (taskLogState) taskLogState.textContent = 'Failed to load logs.';
+      } finally {
+        setLoadingState(logViewer, false);
       }
     });
   });
@@ -666,6 +1020,7 @@ function bindDeadLettersWorkspace() {
   const selectAll = document.getElementById('dead-letter-select-all');
   const bulkRetryBtn = document.getElementById('dead-letter-bulk-retry-btn');
   const refreshBtn = document.getElementById('dead-letter-refresh-btn');
+  const exportBtn = document.getElementById('dead-letter-export-csv-btn');
   const detailTitle = document.getElementById('dead-letter-detail-title');
   const detailViewer = document.getElementById('dead-letter-detail-viewer');
   const noteInput = document.getElementById('dead-letter-note');
@@ -681,31 +1036,72 @@ function bindDeadLettersWorkspace() {
     });
   }
 
-  table.querySelectorAll('tbody tr').forEach((row) => {
-    row.querySelector('.dead-letter-view-btn')?.addEventListener('click', () => {
-      selectedTaskId = Number(row.dataset.taskId || 0);
-      const error = String(row.dataset.error || '');
-      detailTitle.textContent = `Dead Letter Task #${selectedTaskId}`;
-      detailViewer.textContent = JSON.stringify({
-        task_id: selectedTaskId,
-        execution_id: Number(row.dataset.executionId || 0),
-        last_error: error
-      }, null, 2);
-    });
+  function bindRowActions() {
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    applyVirtualizedRows(table.querySelector('tbody'), rows, 'deadletters');
+    setEmptyState('dead-letter-empty-state', rows.length === 0);
 
-    row.querySelector('.dead-letter-retry-btn')?.addEventListener('click', async () => {
-      const taskId = Number(row.dataset.taskId || 0);
-      const ok = await confirmAction(`Retry task #${taskId}? Impact: this may re-run failed operations against external systems.`);
-      if (!ok) return;
-      try {
-        await api(`/api/tasks/${taskId}/retry`, 'POST');
-        window.JanusUI.showToast(`Task #${taskId} queued for retry`, 'success');
-        row.remove();
-      } catch (error) {
-        window.JanusUI.showToast(error.message, 'error');
-      }
+    rows.forEach((row) => {
+      row.querySelector('.dead-letter-view-btn')?.addEventListener('click', () => {
+        selectedTaskId = Number(row.dataset.taskId || 0);
+        const error = String(row.dataset.error || '');
+        detailTitle.textContent = `Dead Letter Task #${selectedTaskId}`;
+        detailViewer.textContent = JSON.stringify({
+          task_id: selectedTaskId,
+          execution_id: Number(row.dataset.executionId || 0),
+          last_error: error,
+        }, null, 2);
+      });
+
+      row.querySelector('.dead-letter-retry-btn')?.addEventListener('click', async () => {
+        const taskId = Number(row.dataset.taskId || 0);
+        const ok = await confirmAction(`Retry task #${taskId}? Impact: this may re-run failed operations against external systems.`);
+        if (!ok) return;
+        try {
+          await api(`/api/tasks/${taskId}/retry`, 'POST');
+          window.JanusUI.showToast(`Task #${taskId} queued for retry`, 'success');
+          row.remove();
+          setEmptyState('dead-letter-empty-state', table.querySelectorAll('tbody tr').length === 0);
+        } catch (error) {
+          window.JanusUI.showToast(error.message, 'error');
+        }
+      });
     });
-  });
+  }
+
+  async function refreshDeadLetters() {
+    setLoadingState(table, true);
+    const rows = await api('/api/dead-letters');
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    rows.forEach((task) => {
+      const tr = document.createElement('tr');
+      tr.dataset.taskId = String(task.id || 0);
+      tr.dataset.executionId = String(task.execution_id || 0);
+      tr.dataset.error = String(task.last_error || '');
+      const canOperate = Boolean(document.getElementById('dead-letter-bulk-retry-btn'));
+      tr.innerHTML = `
+        <td>${canOperate ? '<input type="checkbox" class="dead-letter-select" />' : ''}</td>
+        <td>${task.id}</td>
+        <td><a href="/executions/${task.execution_id}">#${task.execution_id}</a></td>
+        <td>${task.workflow_name} v${task.workflow_version}</td>
+        <td>${task.node_key}</td>
+        <td><span class="status-pill status-failed-permanently">FAILED_PERMANENTLY</span></td>
+        <td>${task.attempts}/${task.max_attempts}</td>
+        <td>${task.last_error || ''}</td>
+        <td>
+          <button class="dead-letter-view-btn" type="button" data-task-id="${task.id}">View</button>
+          ${canOperate ? `<button class="dead-letter-retry-btn" type="button" data-task-id="${task.id}">Retry</button>` : ''}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    bindRowActions();
+    setLoadingState(table, false);
+  }
+
+  bindRowActions();
 
   if (selectAll) {
     selectAll.addEventListener('change', () => {
@@ -737,12 +1133,29 @@ function bindDeadLettersWorkspace() {
       }
 
       window.JanusUI.showToast('Bulk retry complete', 'success');
+      setEmptyState('dead-letter-empty-state', table.querySelectorAll('tbody tr').length === 0);
     });
   }
 
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-      window.location.reload();
+    refreshBtn.addEventListener('click', withBusyIndicator(refreshBtn, 'dead-letter-poll-indicator', 'Refreshing...', 'Updated', refreshDeadLetters));
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const rows = Array.from(table.querySelectorAll('tbody tr')).map((row) => {
+        const tds = row.querySelectorAll('td');
+        return [
+          tds[1]?.textContent?.trim() || '',
+          tds[2]?.textContent?.trim() || '',
+          tds[3]?.textContent?.trim() || '',
+          tds[4]?.textContent?.trim() || '',
+          tds[5]?.textContent?.trim() || '',
+          tds[6]?.textContent?.trim() || '',
+          tds[7]?.textContent?.trim() || '',
+        ];
+      });
+      downloadCsv('dead-letters.csv', ['task_id', 'execution', 'workflow', 'node', 'status', 'attempts', 'error'], rows);
     });
   }
 
@@ -768,6 +1181,16 @@ function bindDeadLettersWorkspace() {
       }
     });
   }
+
+  setInterval(() => {
+    if (!document.hidden) {
+      refreshDeadLetters().then(() => {
+        setPollIndicator('dead-letter-poll-indicator', `Updated ${formatNowTime()}`);
+      }).catch(() => {
+        setPollIndicator('dead-letter-poll-indicator', 'Polling error', 'error');
+      });
+    }
+  }, 25000);
 }
 
 async function refreshExecutionTasks() {
@@ -796,6 +1219,53 @@ async function refreshExecutionTasks() {
   }
 }
 
+function bindKeyboardShortcuts() {
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    const tag = target && target.tagName ? target.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    if (event.key === '/') {
+      const search = document.getElementById('workflow-search');
+      if (search) {
+        event.preventDefault();
+        search.focus();
+      }
+    }
+
+    if (event.key.toLowerCase() === 'r') {
+      const refreshId = [
+        'workflow-refresh-btn',
+        'executions-refresh-btn',
+        'execution-refresh-btn',
+        'dead-letter-refresh-btn',
+        'observability-refresh-btn',
+      ].find((id) => document.getElementById(id));
+      if (refreshId) {
+        document.getElementById(refreshId).click();
+      }
+    }
+
+    if (event.key.toLowerCase() === 'e') {
+      const exportId = [
+        'workflow-export-csv-btn',
+        'executions-export-csv-btn',
+        'execution-export-tasks-csv-btn',
+        'dead-letter-export-csv-btn',
+      ].find((id) => document.getElementById(id));
+      if (exportId) {
+        document.getElementById(exportId).click();
+      }
+    }
+
+    if (event.key === '?') {
+      window.JanusUI.showToast('Shortcuts: / focus search, R refresh, E export CSV', 'info');
+    }
+  });
+}
+
 function init() {
   bindWorkflowsWorkspace();
   bindExecutionsWorkspace();
@@ -805,9 +1275,19 @@ function init() {
   bindExecutionCancelButtons();
   bindTaskButtons();
   bindDeadLettersWorkspace();
+  bindKeyboardShortcuts();
 
   if (document.getElementById('execution-tasks-table')) {
-    setInterval(refreshExecutionTasks, 3000);
+    setInterval(() => {
+      if (!document.hidden) {
+        setPollIndicator('execution-poll-indicator', 'Live updates: polling...', 'busy');
+        refreshExecutionTasks().then(() => {
+          setPollIndicator('execution-poll-indicator', `Live updates: updated ${formatNowTime()}`);
+        }).catch(() => {
+          setPollIndicator('execution-poll-indicator', 'Live updates: degraded', 'error');
+        });
+      }
+    }, 3000);
   }
 }
 

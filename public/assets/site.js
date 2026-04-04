@@ -1,6 +1,12 @@
 (function () {
   const PREF_THEME_KEY = 'janus.theme';
   const PREF_FONT_KEY = 'janus.fontPair';
+  const diagnostics = {
+    lastApi: 'n/a',
+    requestId: 'n/a',
+    latencyMs: null,
+    updatedAt: null,
+  };
 
   function getPreference(key, fallback) {
     try {
@@ -148,6 +154,12 @@
 
     const isEnvelope = typeof data === 'object' && data !== null && Object.prototype.hasOwnProperty.call(data, 'success');
 
+    diagnostics.lastApi = `${normalizedMethod} ${url}`;
+    diagnostics.requestId = isEnvelope ? (data.meta?.request_id || 'n/a') : (response.headers.get('X-Request-Id') || 'n/a');
+    diagnostics.latencyMs = elapsed;
+    diagnostics.updatedAt = new Date().toISOString();
+    document.dispatchEvent(new CustomEvent('janus:diagnostics', { detail: { ...diagnostics } }));
+
     if (!response.ok || (isEnvelope && data.success === false)) {
       const errorMessage = isEnvelope
         ? (data.error?.message || `Request failed (${response.status})`)
@@ -193,6 +205,9 @@
     applyTheme,
     applyFontPair,
     syncSettingsControls,
+    getDiagnostics() {
+      return { ...diagnostics };
+    },
   };
 
   document.addEventListener('DOMContentLoaded', init);

@@ -36,6 +36,11 @@
                 <option value="error-first">Failed/Timed Out first</option>
             </select>
         </label>
+        <div class="toolbar-actions">
+            <button id="executions-refresh-btn" type="button">Refresh</button>
+            <button id="executions-export-csv-btn" type="button">Export CSV</button>
+            <span id="executions-poll-indicator" class="poll-indicator">Idle</span>
+        </div>
     </div>
 
     <div class="table-scroll">
@@ -78,4 +83,5 @@
             </tbody>
         </table>
     </div>
+    <p id="executions-empty-state" class="empty-state" hidden>No executions match the current filters.</p>
 </section>

@@ -63,6 +63,11 @@
 
         <div class="workflow-detail-panel">
             <h3>Tasks</h3>
+            <div class="dead-letter-toolbar">
+                <button id="execution-refresh-btn" type="button">Refresh</button>
+                <button id="execution-export-tasks-csv-btn" type="button">Export Tasks CSV</button>
+                <span id="execution-poll-indicator" class="poll-indicator">Live updates: idle</span>
+            </div>
             <div class="table-scroll">
                 <table id="execution-tasks-table" data-execution-id="<?= (int)$execution['id'] ?>">
                     <thead>
@@ -108,6 +113,7 @@
                     </tbody>
                 </table>
             </div>
+            <p id="execution-tasks-empty-state" class="empty-state" hidden>No tasks found for this execution.</p>
 
             <h3>Task Logs</h3>
             <div class="dead-letter-toolbar">
@@ -121,8 +127,10 @@
                         <option value="ERROR">Error</option>
                     </select>
                 </label>
+                <button id="task-log-export-csv-btn" type="button">Export Logs CSV</button>
                 <button id="task-log-load-more" type="button">Load More</button>
             </div>
+            <p id="task-log-state" class="skeleton-state">Waiting for task log request.</p>
             <pre id="task-log-viewer">Select a task and click Logs.</pre>
         </div>
     </div>

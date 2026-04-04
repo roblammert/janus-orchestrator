@@ -28,9 +28,14 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 	- Shared shell layout with sidebar/header/footer status line.
 	- Theme preferences for all users and admin font-pair selection.
 	- Observability dashboard for metrics and service health.
+	- Trend charts for throughput, failure/retry pressure, and latency.
+	- UI diagnostics panel showing last API, request ID, and latency.
 	- Workflow version creation and listing.
 	- Execution start/list/detail.
 	- Manual controls: retry, skip, manual-complete, cancel execution.
+	- CSV export for workflows, executions, execution tasks, task logs, and dead letters.
+	- Keyboard shortcuts for operator workflows (`/`, `R`, `E`, `?`).
+	- Polling indicators, empty/loading states, and incremental list/log rendering behavior.
 	- Metrics endpoint reading SQL views.
 - Python scheduler (`janus_worker.main_scheduler`)
 	- Dependency resolution (PENDING -> READY).

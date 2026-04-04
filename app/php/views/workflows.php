@@ -18,6 +18,11 @@
                 <option value="count-desc">Total Versions (High-Low)</option>
             </select>
         </label>
+        <div class="toolbar-actions">
+            <button id="workflow-refresh-btn" type="button">Refresh</button>
+            <button id="workflow-export-csv-btn" type="button">Export CSV</button>
+            <span id="workflow-poll-indicator" class="poll-indicator">Idle</span>
+        </div>
     </div>
 
     <div class="workflow-layout">
@@ -48,6 +53,7 @@
                     </tbody>
                 </table>
             </div>
+            <p id="workflow-empty-state" class="empty-state" hidden>No workflows match the current filters.</p>
         </div>
 
         <div class="workflow-detail-panel">

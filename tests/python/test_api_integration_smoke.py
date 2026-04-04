@@ -340,3 +340,48 @@ def test_authenticated_ui_routes_render_shell() -> None:
         assert '<meta name="csrf-token" content="' in html
         assert 'class="app-shell"' in html
         assert 'Janus Orchestrator' in html
+        assert '/assets/app.js' in html
+
+
+def test_phase5_ui_controls_render_on_key_pages() -> None:
+    _ensure_authenticated()
+
+    route_expectations = {
+        '/': [
+            'id="workflow-refresh-btn"',
+            'id="workflow-export-csv-btn"',
+            'id="workflow-poll-indicator"',
+            'id="workflow-empty-state"',
+            'id="workflow-definition-viewer"',
+        ],
+        '/executions': [
+            'id="executions-refresh-btn"',
+            'id="executions-export-csv-btn"',
+            'id="executions-poll-indicator"',
+            'id="executions-empty-state"',
+        ],
+        '/dead-letters': [
+            'id="dead-letter-refresh-btn"',
+            'id="dead-letter-export-csv-btn"',
+            'id="dead-letter-poll-indicator"',
+            'id="dead-letter-empty-state"',
+            'id="dead-letter-detail-viewer"',
+        ],
+        '/observability': [
+            'id="observability-refresh-btn"',
+            'id="observability-poll-indicator"',
+            'id="obs-trend-throughput"',
+            'id="obs-trend-failure"',
+            'id="obs-trend-latency"',
+            'id="diag-last-api"',
+            'id="diag-request-id"',
+            'id="diag-latency"',
+            'id="diag-updated-at"',
+        ],
+    }
+
+    for path, expected_markers in route_expectations.items():
+        status, html = _request_html(path)
+        assert status == 200
+        for marker in expected_markers:
+            assert marker in html, f"missing marker {marker} on {path}"

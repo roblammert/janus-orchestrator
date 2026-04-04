@@ -13,6 +13,8 @@
                 <?php if ($canOperate): ?>
                     <button id="dead-letter-bulk-retry-btn" type="button">Retry Selected</button>
                 <?php endif; ?>
+                <button id="dead-letter-export-csv-btn" type="button">Export CSV</button>
+                <span id="dead-letter-poll-indicator" class="poll-indicator">Idle</span>
             </div>
             <div class="table-scroll">
                 <table id="dead-letter-table">
@@ -55,6 +57,7 @@
                     </tbody>
                 </table>
             </div>
+            <p id="dead-letter-empty-state" class="empty-state" hidden>No dead-letter tasks currently match this view.</p>
         </div>
 
         <div class="workflow-detail-panel">

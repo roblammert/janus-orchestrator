@@ -167,15 +167,15 @@ Definition of done:
 - Manual controls fully auditable.
 
 ### Phase 5 - Enterprise Polish and Reliability
-- [ ] Add empty/loading/error/skeleton states across all pages.
-- [ ] Add optimistic refresh controls and polling indicators.
-- [ ] Add keyboard shortcuts for common operator actions.
-- [ ] Add CSV export for executions/tasks/logs filters.
-- [ ] Add client-side performance improvements:
+- [x] Add empty/loading/error/skeleton states across all pages.
+- [x] Add optimistic refresh controls and polling indicators.
+- [x] Add keyboard shortcuts for common operator actions.
+- [x] Add CSV export for executions/tasks/logs filters.
+- [x] Add client-side performance improvements:
   - table virtualization for large lists
   - incremental rendering for logs
-- [ ] Add observability-friendly UI diagnostics panel (request IDs, API latency).
-- [ ] Add trend charts after summary cards are stable:
+- [x] Add observability-friendly UI diagnostics panel (request IDs, API latency).
+- [x] Add trend charts after summary cards are stable:
   - Execution throughput trend
   - Failure/retry trend
   - Latency trend by task type
@@ -183,6 +183,13 @@ Definition of done:
 Definition of done:
 - UI feels production-ready for day-to-day operations.
 - Usability is strong for both small and large datasets.
+
+Completion notes (2026-04-03):
+- Added refresh/export toolbars and polling indicators on workflows, executions, execution detail, dead letters, and observability pages.
+- Added empty/loading/skeleton states and large-list containment patterns.
+- Added keyboard shortcuts: `/` (focus search), `R` (refresh), `E` (CSV export), `?` (shortcut help).
+- Added CSV export flows for workflows, executions, execution tasks, task logs, and dead-letter queues.
+- Added observability trend charts and diagnostics panel bound to request-id/latency metadata.
 
 ### Phase 6 - Testing, Documentation, and Release Readiness
 - [ ] Expand API integration smoke tests to include all new filter/pagination endpoints.
@@ -279,4 +286,4 @@ How long should intervention audit logs be retained in DB?
 7. Chart rollout trigger (planning suggestion):
 What objective should trigger adding trend charts in Phase 5?
 - Suggested trigger: after summary cards prove useful in 2 weeks of regular usage
-  **Decision:** to be determined (defer this decision during implementation planning)
+  **Decision:** implemented in Phase 5 completion pass on 2026-04-03
