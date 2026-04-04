@@ -488,6 +488,9 @@ function bindExecutionsWorkspace() {
 function bindExecutionCancelButtons() {
   document.querySelectorAll('.cancel-execution-btn').forEach((button) => {
     button.addEventListener('click', async () => {
+      const ok = await confirmAction('Cancel this execution? Impact: queued and running tasks will be stopped and marked as skipped.');
+      if (!ok) return;
+
       const executionId = Number(button.dataset.executionId);
       try {
         await api(`/api/executions/${executionId}/cancel`, 'POST');
@@ -598,7 +601,7 @@ function bindTaskButtons() {
 
   document.querySelectorAll('.task-retry-btn').forEach((button) => {
     button.addEventListener('click', async () => {
-      const ok = await confirmAction('Retry this task? This will place it back in the queue.');
+      const ok = await confirmAction('Retry this task? Impact: it will re-enter the queue and may execute external side effects again.');
       if (!ok) return;
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/retry`, 'POST');
@@ -612,7 +615,7 @@ function bindTaskButtons() {
 
   document.querySelectorAll('.task-skip-btn').forEach((button) => {
     button.addEventListener('click', async () => {
-      const ok = await confirmAction('Skip this task? This marks it as SKIPPED.');
+      const ok = await confirmAction('Skip this task? Impact: downstream tasks may still run with missing expected input.');
       if (!ok) return;
       try {
         await api(`/api/tasks/${Number(button.dataset.taskId)}/skip`, 'POST', { reason: 'Skipped manually' });
@@ -626,7 +629,7 @@ function bindTaskButtons() {
 
   document.querySelectorAll('.task-complete-btn').forEach((button) => {
     button.addEventListener('click', async () => {
-      const ok = await confirmAction('Mark this task completed manually?');
+      const ok = await confirmAction('Force-complete this task? Impact: this bypasses normal execution and records a manual override.');
       if (!ok) return;
       try {
         const output = { manual: true, source: 'ui' };
@@ -667,7 +670,7 @@ function bindDeadLettersWorkspace() {
   const detailViewer = document.getElementById('dead-letter-detail-viewer');
   const noteInput = document.getElementById('dead-letter-note');
   const noteBtn = document.getElementById('dead-letter-note-btn');
-  if (!table || !detailTitle || !detailViewer || !noteInput || !noteBtn) return;
+  if (!table || !detailTitle || !detailViewer || !noteInput) return;
 
   let selectedTaskId = null;
 
@@ -692,7 +695,7 @@ function bindDeadLettersWorkspace() {
 
     row.querySelector('.dead-letter-retry-btn')?.addEventListener('click', async () => {
       const taskId = Number(row.dataset.taskId || 0);
-      const ok = await confirmAction(`Retry task #${taskId}?`);
+      const ok = await confirmAction(`Retry task #${taskId}? Impact: this may re-run failed operations against external systems.`);
       if (!ok) return;
       try {
         await api(`/api/tasks/${taskId}/retry`, 'POST');
@@ -720,7 +723,7 @@ function bindDeadLettersWorkspace() {
         return;
       }
 
-      const ok = await confirmAction(`Retry ${rows.length} selected task(s)?`);
+      const ok = await confirmAction(`Retry ${rows.length} selected task(s)? Impact: each selected task may re-trigger external side effects.`);
       if (!ok) return;
 
       for (const row of rows) {
@@ -743,26 +746,28 @@ function bindDeadLettersWorkspace() {
     });
   }
 
-  noteBtn.addEventListener('click', async () => {
-    if (!selectedTaskId) {
-      window.JanusUI.showToast('Select a task to annotate', 'error');
-      return;
-    }
+  if (noteBtn) {
+    noteBtn.addEventListener('click', async () => {
+      if (!selectedTaskId) {
+        window.JanusUI.showToast('Select a task to annotate', 'error');
+        return;
+      }
 
-    const note = noteInput.value.trim();
-    if (note === '') {
-      window.JanusUI.showToast('Note cannot be empty', 'error');
-      return;
-    }
+      const note = noteInput.value.trim();
+      if (note === '') {
+        window.JanusUI.showToast('Note cannot be empty', 'error');
+        return;
+      }
 
-    try {
-      await api(`/api/tasks/${selectedTaskId}/annotate`, 'POST', { note });
-      window.JanusUI.showToast('Triage note saved', 'success');
-      noteInput.value = '';
-    } catch (error) {
-      window.JanusUI.showToast(error.message, 'error');
-    }
-  });
+      try {
+        await api(`/api/tasks/${selectedTaskId}/annotate`, 'POST', { note });
+        window.JanusUI.showToast('Triage note saved', 'success');
+        noteInput.value = '';
+      } catch (error) {
+        window.JanusUI.showToast(error.message, 'error');
+      }
+    });
+  }
 }
 
 async function refreshExecutionTasks() {

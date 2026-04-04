@@ -7,6 +7,7 @@ use Janus\ExecutionService;
 use Janus\Http;
 use Janus\TaskService;
 use Janus\SystemService;
+use Janus\AuditService;
 use Janus\View;
 use Janus\WorkflowService;
 use Janus\AuthService;
@@ -20,6 +21,7 @@ $workflowService = new WorkflowService($pdo);
 $executionService = new ExecutionService($pdo);
 $taskService = new TaskService($pdo);
 $systemService = new SystemService($pdo);
+$auditService = new AuditService($pdo);
 $authService = new AuthService($pdo);
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -36,7 +38,8 @@ try {
     $publicPaths = ['/login'];
     $isApiPath = str_starts_with($path, '/api/');
 
-    if ($method === 'GET' && $path === '/logout') {
+    if ($method === 'POST' && $path === '/logout') {
+        $authService->requireCsrfForStateChange(false);
         $authService->logout();
         header('Location: /login');
         exit;
@@ -48,11 +51,12 @@ try {
             exit;
         }
 
-        View::render('login', [], ['title' => 'Login', 'isPublic' => true]);
+        View::render('login', ['csrfToken' => $authService->csrfToken()], ['title' => 'Login', 'isPublic' => true, 'csrfToken' => $authService->csrfToken()]);
         exit;
     }
 
     if ($method === 'POST' && $path === '/login') {
+        $authService->requireCsrfForStateChange(false);
         $username = trim((string)($_POST['username'] ?? ''));
         $password = (string)($_POST['password'] ?? '');
 
@@ -61,7 +65,7 @@ try {
             exit;
         }
 
-        View::render('login', ['error' => 'Invalid credentials'], ['title' => 'Login', 'isPublic' => true]);
+        View::render('login', ['error' => 'Invalid credentials', 'csrfToken' => $authService->csrfToken()], ['title' => 'Login', 'isPublic' => true, 'csrfToken' => $authService->csrfToken()]);
         exit;
     }
 
@@ -73,30 +77,43 @@ try {
         }
     }
 
+    if ($isApiPath && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+        $authService->requireCsrfForStateChange(true);
+    }
+
     $user = $authService->currentUser();
+    $actorUserId = is_array($user) ? (int)($user['id'] ?? 0) : 0;
+    $shellExtra = ['csrfToken' => $authService->csrfToken()];
 
     if ($method === 'GET' && $path === '/') {
-        View::render('workflows', ['workflows' => $workflowService->listWorkflows()], AppShell::meta('Workflows', $user));
+        View::render('workflows', ['workflows' => $workflowService->listWorkflows(), 'user' => $user], AppShell::meta('Workflows', $user, $shellExtra));
         exit;
     }
 
     if ($method === 'GET' && $path === '/executions') {
-        View::render('executions', ['executions' => $executionService->listExecutions()], AppShell::meta('Executions', $user));
+        View::render('executions', ['executions' => $executionService->listExecutions(), 'user' => $user], AppShell::meta('Executions', $user, $shellExtra));
         exit;
     }
 
     if ($method === 'GET' && $path === '/settings') {
-        View::render('settings', ['user' => $user], AppShell::meta('Settings', $user));
+        View::render('settings', ['user' => $user], AppShell::meta('Settings', $user, $shellExtra));
         exit;
     }
 
     if ($method === 'GET' && $path === '/dead-letters') {
-        View::render('dead_letters', ['deadLetters' => $taskService->listDeadLetters()], AppShell::meta('Dead Letters', $user));
+        View::render('dead_letters', ['deadLetters' => $taskService->listDeadLetters(), 'user' => $user], AppShell::meta('Dead Letters', $user, $shellExtra));
         exit;
     }
 
     if ($method === 'GET' && $path === '/observability') {
-        View::render('observability', [], AppShell::meta('Observability', $user));
+        View::render('observability', [], AppShell::meta('Observability', $user, $shellExtra));
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/audit') {
+        $authService->requireRolePage('ADMIN');
+        $events = $auditService->listEventsPage(1, 100);
+        View::render('audit_events', ['events' => $events['items']], AppShell::meta('Audit', $user, $shellExtra));
         exit;
     }
 
@@ -105,7 +122,7 @@ try {
         View::render(
             'workflow_detail',
             ['name' => $name, 'versions' => $workflowService->listWorkflowVersions($name)],
-            AppShell::meta('Workflow Detail', $user)
+            AppShell::meta('Workflow Detail', $user, $shellExtra)
         );
         exit;
     }
@@ -118,7 +135,7 @@ try {
             exit;
         }
 
-        View::render('execution_detail', ['execution' => $execution], AppShell::meta('Execution Detail', $user));
+        View::render('execution_detail', ['execution' => $execution, 'user' => $user], AppShell::meta('Execution Detail', $user, $shellExtra));
         exit;
     }
 
@@ -133,6 +150,7 @@ try {
     }
 
     if ($method === 'POST' && $path === '/api/workflows') {
+        $authService->requireRoleApi('ADMIN');
         $body = Http::bodyJson();
         $result = $workflowService->createWorkflowVersion($body);
         Http::success($result, 201);
@@ -156,6 +174,7 @@ try {
     }
 
     if ($method === 'POST' && $path === '/api/executions') {
+        $authService->requireRoleApi('OPERATOR', 'ADMIN');
         $body = Http::bodyJson();
         $workflowId = (int)($body['workflow_id'] ?? 0);
         $input = is_array($body['input'] ?? null) ? $body['input'] : [];
@@ -214,7 +233,8 @@ try {
     }
 
     if ($method === 'POST' && preg_match('#^/api/executions/(\d+)/cancel$#', $path, $m) === 1) {
-        $executionService->cancelExecution((int)$m[1]);
+        $authService->requireRoleApi('OPERATOR', 'ADMIN');
+        $executionService->cancelExecution((int)$m[1], $actorUserId > 0 ? $actorUserId : null);
         Http::success(['ok' => true]);
         exit;
     }
@@ -232,22 +252,25 @@ try {
     }
 
     if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/retry$#', $path, $m) === 1) {
-        $taskService->retryTask((int)$m[1]);
+        $authService->requireRoleApi('OPERATOR', 'ADMIN');
+        $taskService->retryTask((int)$m[1], $actorUserId > 0 ? $actorUserId : null);
         Http::success(['ok' => true]);
         exit;
     }
 
     if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/skip$#', $path, $m) === 1) {
+        $authService->requireRoleApi('OPERATOR', 'ADMIN');
         $body = Http::bodyJson();
-        $taskService->skipTask((int)$m[1], (string)($body['reason'] ?? 'Skipped manually'));
+        $taskService->skipTask((int)$m[1], (string)($body['reason'] ?? 'Skipped manually'), $actorUserId > 0 ? $actorUserId : null);
         Http::success(['ok' => true]);
         exit;
     }
 
     if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/complete$#', $path, $m) === 1) {
+        $authService->requireRoleApi('ADMIN');
         $body = Http::bodyJson();
         $output = is_array($body['output'] ?? null) ? $body['output'] : [];
-        $taskService->completeTaskManually((int)$m[1], $output);
+        $taskService->completeTaskManually((int)$m[1], $output, $actorUserId > 0 ? $actorUserId : null);
         Http::success(['ok' => true]);
         exit;
     }
@@ -285,9 +308,9 @@ try {
     }
 
     if ($method === 'POST' && preg_match('#^/api/tasks/(\d+)/annotate$#', $path, $m) === 1) {
+        $authService->requireRoleApi('OPERATOR', 'ADMIN');
         $body = Http::bodyJson();
         $note = (string)($body['note'] ?? '');
-        $actorUserId = is_array($user) ? (int)($user['id'] ?? 0) : 0;
         $taskService->annotateTask((int)$m[1], $note, $actorUserId > 0 ? $actorUserId : null);
         Http::success(['ok' => true]);
         exit;
@@ -307,6 +330,7 @@ try {
         Http::success([
             'app_version' => Janus\Config::appVersion(),
             'environment' => Janus\Config::appEnvironment(),
+            'role' => is_array($user) ? (string)($user['role'] ?? 'VIEWER') : 'VIEWER',
             'capabilities' => [
                 'dead_letters' => true,
                 'observability' => true,
@@ -316,6 +340,17 @@ try {
                 'theme_dark' => true,
             ],
         ]);
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/api/audit-events') {
+        $authService->requireRoleApi('ADMIN');
+        $eventType = trim((string)($_GET['event_type'] ?? ''));
+        $actorFilter = max(0, (int)($_GET['actor_user_id'] ?? 0));
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $pageSize = max(1, (int)($_GET['page_size'] ?? 50));
+        $result = $auditService->listEventsPage($page, $pageSize, $eventType, $actorFilter);
+        Http::success($result['items'], 200, ['pagination' => $result['pagination']]);
         exit;
     }
 

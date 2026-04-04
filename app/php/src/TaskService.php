@@ -12,7 +12,7 @@ final class TaskService
     {
     }
 
-    public function retryTask(int $taskId): void
+    public function retryTask(int $taskId, ?int $actorUserId = null): void
     {
         $this->pdo->beginTransaction();
         try {
@@ -29,7 +29,7 @@ final class TaskService
 
             $update = $this->pdo->prepare(
                 'UPDATE tasks
-                 SET status = \"READY\", scheduled_at = NOW(), next_attempt_at = NULL, last_error = NULL, finished_at = NULL
+                 SET status = "READY", scheduled_at = NOW(), next_attempt_at = NULL, last_error = NULL, finished_at = NULL
                  WHERE id = :id'
             );
             $update->execute(['id' => $taskId]);
@@ -49,6 +49,14 @@ final class TaskService
                 'priority' => (int)$row['priority'],
             ]);
 
+            $this->recordAuditEvent(
+                'task_retry',
+                'task',
+                $taskId,
+                ['node_key' => (string)($row['node_key'] ?? '')],
+                $actorUserId
+            );
+
             $this->pdo->commit();
         } catch (\Throwable $e) {
             $this->pdo->rollBack();
@@ -56,12 +64,19 @@ final class TaskService
         }
     }
 
-    public function skipTask(int $taskId, string $reason = 'Skipped manually'): void
+    public function skipTask(int $taskId, string $reason = 'Skipped manually', ?int $actorUserId = null): void
     {
+        $task = $this->pdo->prepare('SELECT id, node_key FROM tasks WHERE id = :id LIMIT 1');
+        $task->execute(['id' => $taskId]);
+        $row = $task->fetch();
+        if (!$row) {
+            throw new \InvalidArgumentException('Task not found');
+        }
+
         $stmt = $this->pdo->prepare(
             'UPDATE tasks
-             SET status = \"SKIPPED\", finished_at = NOW(), last_error = :reason
-             WHERE id = :id AND status IN (\"PENDING\", \"READY\", \"FAILED\")'
+             SET status = "SKIPPED", finished_at = NOW(), last_error = :reason
+             WHERE id = :id AND status IN ("PENDING", "READY", "FAILED")'
         );
         $stmt->execute([
             'id' => $taskId,
@@ -70,16 +85,34 @@ final class TaskService
 
         $cleanup = $this->pdo->prepare('DELETE FROM task_queue WHERE task_id = :task_id');
         $cleanup->execute(['task_id' => $taskId]);
+
+        $this->recordAuditEvent(
+            'task_skip',
+            'task',
+            $taskId,
+            [
+                'node_key' => (string)($row['node_key'] ?? ''),
+                'reason' => Redactor::redactString($reason),
+            ],
+            $actorUserId
+        );
     }
 
-    public function completeTaskManually(int $taskId, array $output): void
+    public function completeTaskManually(int $taskId, array $output, ?int $actorUserId = null): void
     {
         $this->pdo->beginTransaction();
         try {
+            $task = $this->pdo->prepare('SELECT id, node_key FROM tasks WHERE id = :id FOR UPDATE');
+            $task->execute(['id' => $taskId]);
+            $row = $task->fetch();
+            if (!$row) {
+                throw new \InvalidArgumentException('Task not found');
+            }
+
             $stmt = $this->pdo->prepare(
                 'UPDATE tasks
-                 SET status = \"COMPLETED\", finished_at = NOW(), output_json = :output_json, last_error = NULL
-                 WHERE id = :id AND status IN (\"PENDING\", \"READY\", \"FAILED\")'
+                 SET status = "COMPLETED", finished_at = NOW(), output_json = :output_json, last_error = NULL
+                 WHERE id = :id AND status IN ("PENDING", "READY", "FAILED")'
             );
             $stmt->execute([
                 'id' => $taskId,
@@ -88,6 +121,17 @@ final class TaskService
 
             $cleanup = $this->pdo->prepare('DELETE FROM task_queue WHERE task_id = :task_id');
             $cleanup->execute(['task_id' => $taskId]);
+
+            $this->recordAuditEvent(
+                'task_complete_manual',
+                'task',
+                $taskId,
+                [
+                    'node_key' => (string)($row['node_key'] ?? ''),
+                    'output' => Redactor::redact($output),
+                ],
+                $actorUserId
+            );
 
             $this->pdo->commit();
         } catch (\Throwable $e) {
@@ -130,6 +174,8 @@ final class TaskService
 
         foreach ($rows as &$row) {
             $row['metadata_json'] = json_decode((string)$row['metadata_json'], true);
+            $row['metadata_json'] = Redactor::redact(is_array($row['metadata_json']) ? $row['metadata_json'] : []);
+            $row['message'] = Redactor::redactString((string)($row['message'] ?? ''));
         }
 
         $nextCursor = $cursor;
@@ -201,8 +247,13 @@ final class TaskService
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
 
+        $items = $stmt->fetchAll();
+        foreach ($items as &$item) {
+            $item['last_error'] = Redactor::redactString((string)($item['last_error'] ?? ''));
+        }
+
         return [
-            'items' => $stmt->fetchAll(),
+            'items' => $items,
             'pagination' => [
                 'page' => $page,
                 'page_size' => $pageSize,
@@ -210,8 +261,6 @@ final class TaskService
                 'has_next' => ($offset + $pageSize) < $total,
             ],
         ];
-
-        return $rows;
     }
 
     public function listDeadLetters(): array
@@ -225,7 +274,12 @@ final class TaskService
              ORDER BY t.updated_at DESC, t.id DESC'
         );
 
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $row['last_error'] = Redactor::redactString((string)($row['last_error'] ?? ''));
+        }
+
+        return $rows;
     }
 
     public function annotateTask(int $taskId, string $note, ?int $actorUserId = null): void
@@ -249,7 +303,27 @@ final class TaskService
             'event_type' => 'dead_letter_note',
             'entity_type' => 'task',
             'entity_id' => $taskId,
-            'details_json' => json_encode(['note' => $note], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'details_json' => json_encode(['note' => Redactor::redactString($note)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]);
+    }
+
+    private function recordAuditEvent(
+        string $eventType,
+        string $entityType,
+        int $entityId,
+        array $details,
+        ?int $actorUserId
+    ): void {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO audit_events (actor_user_id, event_type, entity_type, entity_id, details_json)
+             VALUES (:actor_user_id, :event_type, :entity_type, :entity_id, :details_json)'
+        );
+        $stmt->execute([
+            'actor_user_id' => $actorUserId,
+            'event_type' => $eventType,
+            'entity_type' => $entityType,
+            'entity_id' => $entityId,
+            'details_json' => json_encode(Redactor::redact($details), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
     }
 }

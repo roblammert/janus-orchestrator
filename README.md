@@ -61,6 +61,15 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 
 ## API Endpoints
 
+Security policy for state-changing API calls:
+
+- Requests using `POST`, `PUT`, `PATCH`, or `DELETE` must include `X-CSRF-Token`.
+- Token value is issued by the authenticated shell in a page meta tag.
+- RBAC model:
+	- `VIEWER`: read-only endpoints and pages.
+	- `OPERATOR`: execution/task intervention endpoints except force-complete.
+	- `ADMIN`: full access including workflow creation, force-complete, and audit pages.
+
 All API responses now use a standard envelope:
 
 - Success: `{ "success": true, "data": ..., "meta": { ... } }`
@@ -86,15 +95,17 @@ All API responses now use a standard envelope:
 - `GET /api/metrics/overview` metrics from SQL views
 - `GET /api/health/services` service health summary (web/api/db/fastapi/scheduler/worker)
 - `GET /api/meta/shell` app metadata and capability flags for UI shell
+- `GET /api/audit-events` list intervention audit events (admin only)
 
 UI routes:
 
 - `GET /login` login page
 - `POST /login` authenticate session
-- `GET /logout` end session
+- `POST /logout` end session (CSRF protected)
 - `GET /settings` theme preferences and admin font selection
 - `GET /observability` metrics dashboard and service health panel
 - `GET /dead-letters` dead-letter queue triage workspace
+- `GET /audit` intervention audit workspace (admin only)
 
 ## Environment Variables
 

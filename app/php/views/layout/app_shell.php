@@ -7,12 +7,16 @@ $version = (string)($pageMeta['version'] ?? '0.1.0');
 $navItems = is_array($pageMeta['navItems'] ?? null) ? $pageMeta['navItems'] : [];
 $currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
+$csrfToken = (string)($pageMeta['csrfToken'] ?? '');
 ?>
 <!doctype html>
 <html lang="en" data-theme="light" data-font-pair="plex">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <?php if (!$isPublic && $csrfToken !== ''): ?>
+        <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>" />
+    <?php endif; ?>
     <title><?= htmlspecialchars($title) ?> - Janus Orchestrator</title>
         <script>
             (function () {
@@ -97,7 +101,10 @@ $user = is_array($pageMeta['user'] ?? null) ? $pageMeta['user'] : null;
                         <?php endif; ?>
                         <span class="user-pill"><?= htmlspecialchars((string)$user['username']) ?> (<?= htmlspecialchars((string)$user['role']) ?>)</span>
                     <?php endif; ?>
-                    <a class="link-button" href="/logout">Logout</a>
+                    <form method="post" action="/logout" class="inline-form">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>" />
+                        <button type="submit" class="link-button">Logout</button>
+                    </form>
                 </div>
             </header>
 

@@ -65,6 +65,8 @@
     </div>
 </section>
 
+<?php $role = strtoupper((string)($user['role'] ?? 'VIEWER')); ?>
+<?php if ($role === 'ADMIN'): ?>
 <section>
     <h2>Create Workflow Version</h2>
     <form id="create-workflow-form">
@@ -103,3 +105,4 @@
         <button type="submit">Create Version</button>
     </form>
 </section>
+<?php endif; ?>

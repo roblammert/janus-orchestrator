@@ -8,6 +8,12 @@ use PDO;
 
 final class AuthService
 {
+    private const ROLE_LEVELS = [
+        'VIEWER' => 10,
+        'OPERATOR' => 20,
+        'ADMIN' => 30,
+    ];
+
     private PDO $pdo;
 
     public function __construct(PDO $pdo)
@@ -80,7 +86,76 @@ final class AuthService
             return;
         }
 
-        Http::json(['error' => 'Authentication required'], 401);
+        Http::error('Authentication required', 'AUTH_REQUIRED', 401);
+        exit;
+    }
+
+    public function requireRoleApi(string ...$allowedRoles): void
+    {
+        $user = $this->currentUser();
+        if ($user === null) {
+            Http::error('Authentication required', 'AUTH_REQUIRED', 401);
+            exit;
+        }
+
+        if ($this->userHasAnyRole($user, $allowedRoles)) {
+            return;
+        }
+
+        Http::error('Insufficient role permissions', 'FORBIDDEN', 403);
+        exit;
+    }
+
+    public function requireRolePage(string ...$allowedRoles): void
+    {
+        $user = $this->currentUser();
+        if ($user === null) {
+            header('Location: /login');
+            exit;
+        }
+
+        if ($this->userHasAnyRole($user, $allowedRoles)) {
+            return;
+        }
+
+        header('Location: /');
+        exit;
+    }
+
+    public function csrfToken(): string
+    {
+        $token = $_SESSION['csrf_token'] ?? null;
+        if (is_string($token) && $token !== '') {
+            return $token;
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $_SESSION['csrf_token'] = $token;
+        return $token;
+    }
+
+    public function requireCsrfForStateChange(bool $isApiRequest): void
+    {
+        $expected = $this->csrfToken();
+
+        $provided = '';
+        if ($isApiRequest) {
+            $header = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+            $provided = is_string($header) ? trim($header) : '';
+        } else {
+            $provided = trim((string)($_POST['csrf_token'] ?? ''));
+        }
+
+        if ($provided !== '' && hash_equals($expected, $provided)) {
+            return;
+        }
+
+        if ($isApiRequest) {
+            Http::error('Invalid CSRF token', 'CSRF_FAILED', 419);
+            exit;
+        }
+
+        Http::json(['error' => 'Invalid CSRF token'], 419);
         exit;
     }
 
@@ -105,6 +180,7 @@ final class AuthService
         $_SESSION['user_id'] = (int) $user['id'];
         $_SESSION['created_at'] = time();
         $_SESSION['last_seen_at'] = time();
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
         return true;
     }
@@ -134,6 +210,26 @@ final class AuthService
         ]);
 
         session_start();
+
+        if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token']) || $_SESSION['csrf_token'] === '') {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        }
+    }
+
+    private function userHasAnyRole(array $user, array $allowedRoles): bool
+    {
+        $userRole = strtoupper((string)($user['role'] ?? 'VIEWER'));
+        $userLevel = self::ROLE_LEVELS[$userRole] ?? 0;
+
+        foreach ($allowedRoles as $role) {
+            $normalized = strtoupper(trim($role));
+            $required = self::ROLE_LEVELS[$normalized] ?? PHP_INT_MAX;
+            if ($userLevel >= $required) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function ensureBootstrapAdmin(): void

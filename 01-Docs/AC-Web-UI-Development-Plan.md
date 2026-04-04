@@ -152,15 +152,15 @@ Definition of done:
 - Interaction updates feel stable and professional before security/RBAC work begins.
 
 ### Phase 4 - Security and Trustworthy Operations UX
-- [ ] Harden and expand authentication/session model for UI/API access.
-- [ ] Add CSRF protection for state-changing operations.
-- [ ] Add role model:
+- [x] Harden and expand authentication/session model for UI/API access.
+- [x] Add CSRF protection for state-changing operations.
+- [x] Add role model:
   - Viewer (read-only)
   - Operator (execute/control)
   - Admin (workflow definition and secrets management)
-- [ ] Redact sensitive fields in UI logs and API responses.
-- [ ] Add audit trail views for manual task interventions.
-- [ ] Add confirmation dialogs with explicit impact statements for destructive actions.
+- [x] Redact sensitive fields in UI logs and API responses.
+- [x] Add audit trail views for manual task interventions.
+- [x] Add confirmation dialogs with explicit impact statements for destructive actions.
 
 Definition of done:
 - No anonymous write operations.

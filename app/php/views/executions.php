@@ -1,4 +1,6 @@
 <section id="executions-workspace">
+    <?php $role = strtoupper((string)($user['role'] ?? 'VIEWER')); ?>
+    <?php $canOperate = in_array($role, ['OPERATOR', 'ADMIN'], true); ?>
     <header class="page-heading">
         <h2>Executions</h2>
         <p>Review runtime activity, apply quick filters, and jump into live execution details.</p>
@@ -67,7 +69,7 @@
                     <td><?= htmlspecialchars((string)$execution['finished_at']) ?></td>
                     <td>
                         <a href="/executions/<?= (int)$execution['id'] ?>">View</a>
-                        <?php if (in_array($execution['status'], ['PENDING', 'RUNNING'], true)): ?>
+                        <?php if ($canOperate && in_array($execution['status'], ['PENDING', 'RUNNING'], true)): ?>
                             <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel</button>
                         <?php endif; ?>
                     </td>

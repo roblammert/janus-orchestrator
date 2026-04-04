@@ -115,12 +115,20 @@
   }
 
   async function api(url, method, body) {
+    const normalizedMethod = (method || 'GET').toUpperCase();
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod)) {
+      headers['X-CSRF-Token'] = csrf;
+    }
+
     const started = performance.now();
     const response = await fetch(url, {
-      method: method || 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      method: normalizedMethod,
+      headers,
       body: body ? JSON.stringify(body) : null,
     });
 

@@ -1,4 +1,7 @@
 <section id="execution-workspace" data-execution-id="<?= (int)$execution['id'] ?>">
+    <?php $role = strtoupper((string)($user['role'] ?? 'VIEWER')); ?>
+    <?php $canOperate = in_array($role, ['OPERATOR', 'ADMIN'], true); ?>
+    <?php $canForceComplete = $role === 'ADMIN'; ?>
     <header class="page-heading execution-heading">
         <h2>Execution #<?= (int)$execution['id'] ?></h2>
         <p>Workflow: <?= htmlspecialchars((string)$execution['workflow_name']) ?> v<?= (int)$execution['workflow_version'] ?></p>
@@ -18,9 +21,11 @@
             <p><?= htmlspecialchars((string)$execution['finished_at']) ?></p>
         </article>
     </div>
-    <div class="execution-actions">
-        <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel Execution</button>
-    </div>
+    <?php if ($canOperate): ?>
+        <div class="execution-actions">
+            <button class="cancel-execution-btn" data-execution-id="<?= (int)$execution['id'] ?>">Cancel Execution</button>
+        </div>
+    <?php endif; ?>
 
     <div class="workflow-layout execution-layout">
         <div class="workflow-list-panel">
@@ -88,9 +93,13 @@
                             <td class="task-error"><?= htmlspecialchars((string)$task['last_error']) ?></td>
                             <td class="task-actions-cell">
                                 <div class="task-actions-stack">
-                                    <button class="task-retry-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Retry</button>
-                                    <button class="task-skip-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Skip</button>
-                                    <button class="task-complete-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Complete</button>
+                                    <?php if ($canOperate): ?>
+                                        <button class="task-retry-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Retry</button>
+                                        <button class="task-skip-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Skip</button>
+                                    <?php endif; ?>
+                                    <?php if ($canForceComplete): ?>
+                                        <button class="task-complete-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Complete</button>
+                                    <?php endif; ?>
                                     <button class="task-logs-btn" type="button" data-task-id="<?= (int)$task['id'] ?>">Logs</button>
                                 </div>
                             </td>

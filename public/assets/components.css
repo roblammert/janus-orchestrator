@@ -147,6 +147,10 @@ pre {
   margin: 0;
 }
 
+.inline-form {
+  margin: 0;
+}
+
 .header-controls select {
   width: 280px;
   margin-top: 0;

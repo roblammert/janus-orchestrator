@@ -174,8 +174,8 @@ final class ExecutionService
             return null;
         }
 
-        $execution['input_json'] = json_decode((string)$execution['input_json'], true);
-        $execution['output_json'] = json_decode((string)$execution['output_json'], true);
+        $execution['input_json'] = Redactor::redact(json_decode((string)$execution['input_json'], true));
+        $execution['output_json'] = Redactor::redact(json_decode((string)$execution['output_json'], true));
 
         $tasksStmt = $this->pdo->prepare(
             'SELECT t.id, t.node_key, wn.name AS node_name, wn.type AS node_type, t.status, t.attempts, t.max_attempts,
@@ -189,7 +189,8 @@ final class ExecutionService
         $tasks = $tasksStmt->fetchAll();
 
         foreach ($tasks as &$task) {
-            $task['output_json'] = json_decode((string)$task['output_json'], true);
+            $task['output_json'] = Redactor::redact(json_decode((string)$task['output_json'], true));
+            $task['last_error'] = Redactor::redactString((string)($task['last_error'] ?? ''));
         }
 
         $statusByNodeKey = [];
@@ -286,21 +287,28 @@ final class ExecutionService
         ];
     }
 
-    public function cancelExecution(int $executionId): void
+    public function cancelExecution(int $executionId, ?int $actorUserId = null): void
     {
         $this->pdo->beginTransaction();
         try {
+            $read = $this->pdo->prepare('SELECT id, status, workflow_name FROM executions WHERE id = :id FOR UPDATE');
+            $read->execute(['id' => $executionId]);
+            $execution = $read->fetch();
+            if (!$execution) {
+                throw new \InvalidArgumentException('Execution not found');
+            }
+
             $updateExecution = $this->pdo->prepare(
                 'UPDATE executions
-                 SET status = \"CANCELLED\", cancelled_at = NOW(), finished_at = NOW()
-                 WHERE id = :id AND status IN (\"PENDING\", \"RUNNING\")'
+                  SET status = "CANCELLED", cancelled_at = NOW(), finished_at = NOW()
+                  WHERE id = :id AND status IN ("PENDING", "RUNNING")'
             );
             $updateExecution->execute(['id' => $executionId]);
 
             $updateTasks = $this->pdo->prepare(
                 'UPDATE tasks
-                 SET status = \"SKIPPED\", finished_at = NOW(), last_error = \"Execution cancelled manually\"
-                 WHERE execution_id = :execution_id AND status IN (\"PENDING\", \"READY\", \"RUNNING\", \"FAILED\")'
+                  SET status = "SKIPPED", finished_at = NOW(), last_error = "Execution cancelled manually"
+                  WHERE execution_id = :execution_id AND status IN ("PENDING", "READY", "RUNNING", "FAILED")'
             );
             $updateTasks->execute(['execution_id' => $executionId]);
 
@@ -319,6 +327,22 @@ final class ExecutionService
                 'entity_id' => $executionId,
                 'to_state' => 'CANCELLED',
                 'metadata_json' => json_encode(['reason' => 'manual_cancel']),
+            ]);
+
+            $audit = $this->pdo->prepare(
+                'INSERT INTO audit_events (actor_user_id, event_type, entity_type, entity_id, details_json)
+                 VALUES (:actor_user_id, :event_type, :entity_type, :entity_id, :details_json)'
+            );
+            $audit->execute([
+                'actor_user_id' => $actorUserId,
+                'event_type' => 'execution_cancel',
+                'entity_type' => 'execution',
+                'entity_id' => $executionId,
+                'details_json' => json_encode([
+                    'workflow_name' => (string)($execution['workflow_name'] ?? ''),
+                    'from_status' => (string)($execution['status'] ?? ''),
+                    'to_status' => 'CANCELLED',
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ]);
 
             $this->pdo->commit();

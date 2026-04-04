@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import uuid
 import http.cookiejar
@@ -16,10 +17,32 @@ AUTH_PASSWORD = os.getenv("JANUS_AUTH_PASSWORD", "admin123")
 
 _COOKIE_JAR = http.cookiejar.CookieJar()
 _OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_COOKIE_JAR))
+_CSRF_TOKEN = ""
+
+
+def _extract_csrf_token(html: str) -> str:
+    match = re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
+    if not match:
+        raise AssertionError('Could not find csrf_token on login page')
+    return match.group(1)
+
+
+def _extract_shell_csrf_token(html: str) -> str:
+    match = re.search(r'<meta\s+name="csrf-token"\s+content="([^"]+)"\s*/?>', html)
+    if not match:
+        raise AssertionError('Could not find csrf-token meta tag on authenticated shell page')
+    return match.group(1)
 
 
 def _ensure_authenticated() -> None:
-    encoded = urllib.parse.urlencode({"username": AUTH_USERNAME, "password": AUTH_PASSWORD}).encode("utf-8")
+    global _CSRF_TOKEN
+
+    with _OPENER.open(f"{BASE_URL}/login", timeout=API_TIMEOUT_SECONDS) as response:
+        login_html = response.read().decode("utf-8", errors="replace")
+
+    _CSRF_TOKEN = _extract_csrf_token(login_html)
+
+    encoded = urllib.parse.urlencode({"username": AUTH_USERNAME, "password": AUTH_PASSWORD, "csrf_token": _CSRF_TOKEN}).encode("utf-8")
     req = urllib.request.Request(
         url=f"{BASE_URL}/login",
         data=encoded,
@@ -29,10 +52,19 @@ def _ensure_authenticated() -> None:
     with _OPENER.open(req, timeout=API_TIMEOUT_SECONDS):
         pass
 
+    with _OPENER.open(f"{BASE_URL}/", timeout=API_TIMEOUT_SECONDS) as response:
+        shell_html = response.read().decode("utf-8", errors="replace")
+
+    _CSRF_TOKEN = _extract_shell_csrf_token(shell_html)
+
 
 def _request_json(method: str, path: str, payload: dict | None = None) -> tuple[int, dict | list]:
     url = f"{BASE_URL}{path}"
     headers = {"Content-Type": "application/json"}
+    if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        if not _CSRF_TOKEN:
+            raise AssertionError('Missing CSRF token. Authenticate before state-changing requests.')
+        headers["X-CSRF-Token"] = _CSRF_TOKEN
     data = None
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
@@ -55,6 +87,18 @@ def _request_json(method: str, path: str, payload: dict | None = None) -> tuple[
             f"Could not reach API at {BASE_URL}. "
             f"Start the app first and set JANUS_BASE_URL if needed. Details: {exc}"
         ) from exc
+
+
+def _request_html(path: str) -> tuple[int, str]:
+    url = f"{BASE_URL}{path}"
+    req = urllib.request.Request(url=url, method="GET")
+    try:
+        with _OPENER.open(req, timeout=API_TIMEOUT_SECONDS) as response:
+            html = response.read().decode("utf-8", errors="replace")
+            return response.status, html
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        raise AssertionError(f"UI request failed: GET {path} status={exc.code} body={raw[:400]}") from exc
 
 
 def _unique_workflow_name(prefix: str) -> str:
@@ -221,3 +265,78 @@ def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
     _request_json("POST", f"/api/executions/{execution_1}/cancel")
     _request_json("POST", f"/api/executions/{execution_2}/cancel")
     _request_json("POST", f"/api/executions/{execution_3}/cancel")
+
+
+def test_filter_pagination_and_audit_contracts() -> None:
+    _ensure_authenticated()
+    workflow_name = _unique_workflow_name("smoke_filters")
+    workflow_id = _create_workflow_with_two_nodes(workflow_name)
+    execution_id = _start_execution(workflow_id, {"test": "filters_and_pagination"})
+
+    wf_status, wf_body = _request_json("GET", f"/api/workflows?search={urllib.parse.quote(workflow_name)}&sort=name_asc&page=1&page_size=5")
+    assert wf_status == 200
+    assert isinstance(wf_body, dict)
+    wf_data = wf_body.get("data")
+    wf_meta = wf_body.get("meta")
+    assert isinstance(wf_data, list)
+    assert isinstance(wf_meta, dict)
+    assert isinstance(wf_meta.get("pagination"), dict)
+    assert any(item.get("name") == workflow_name for item in wf_data)
+
+    exec_status, exec_body = _request_json(
+        "GET",
+        f"/api/executions?workflow={urllib.parse.quote(workflow_name)}&status=RUNNING&sort=id_desc&page=1&page_size=10",
+    )
+    assert exec_status == 200
+    exec_data = exec_body.get("data")
+    exec_meta = exec_body.get("meta")
+    assert isinstance(exec_data, list)
+    assert isinstance(exec_meta, dict)
+    assert isinstance(exec_meta.get("pagination"), dict)
+    assert any(int(item.get("id", 0)) == execution_id for item in exec_data)
+
+    tasks_status, tasks_body = _request_json("GET", f"/api/tasks?execution_id={execution_id}&sort=id_desc&page=1&page_size=20")
+    assert tasks_status == 200
+    tasks_data = tasks_body.get("data")
+    tasks_meta = tasks_body.get("meta")
+    assert isinstance(tasks_data, list)
+    assert len(tasks_data) >= 2
+    assert isinstance(tasks_meta, dict)
+    assert isinstance(tasks_meta.get("pagination"), dict)
+
+    events_status, events_body = _request_json("GET", f"/api/executions/{execution_id}/events?since_id=0&limit=50")
+    assert events_status == 200
+    assert isinstance(events_body.get("data"), list)
+    assert isinstance(events_body.get("meta"), dict)
+    assert "next_since_id" in (events_body.get("meta") or {})
+
+    _request_json("POST", f"/api/executions/{execution_id}/cancel")
+
+    audit_status, audit_body = _request_json("GET", "/api/audit-events?page=1&page_size=50")
+    assert audit_status == 200
+    audit_data = audit_body.get("data")
+    audit_meta = audit_body.get("meta")
+    assert isinstance(audit_data, list)
+    assert isinstance(audit_meta, dict)
+    assert isinstance(audit_meta.get("pagination"), dict)
+    assert any(item.get("event_type") == "execution_cancel" for item in audit_data)
+
+
+def test_authenticated_ui_routes_render_shell() -> None:
+    _ensure_authenticated()
+
+    pages = [
+        "/",
+        "/executions",
+        "/dead-letters",
+        "/observability",
+        "/settings",
+        "/audit",
+    ]
+
+    for path in pages:
+        status, html = _request_html(path)
+        assert status == 200
+        assert '<meta name="csrf-token" content="' in html
+        assert 'class="app-shell"' in html
+        assert 'Janus Orchestrator' in html

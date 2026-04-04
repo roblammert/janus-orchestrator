@@ -18,6 +18,9 @@ These tests call the live API and validate:
 - Execution lifecycle (start and cancel)
 - Manual task controls (retry, skip, complete)
 - Task logs endpoint
+- Filter/pagination metadata contracts on list endpoints
+- Audit events endpoint contract
+- Authenticated UI route shell rendering smoke checks
 
 Prerequisites:
 
@@ -41,6 +44,8 @@ Optional:
 - `JANUS_AUTH_PASSWORD` (default `admin123`)
 
 ## API smoke checks (manual)
+
+State-changing API requests require `X-CSRF-Token` from an authenticated session.
 
 1. Create workflow with `POST /api/workflows`.
 2. Start execution with `POST /api/executions`.
