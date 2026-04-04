@@ -385,3 +385,175 @@ def test_phase5_ui_controls_render_on_key_pages() -> None:
         assert status == 200
         for marker in expected_markers:
             assert marker in html, f"missing marker {marker} on {path}"
+
+
+def test_extended_filter_and_cursor_contracts() -> None:
+    _ensure_authenticated()
+
+    workflow_name = _unique_workflow_name("smoke_phase6_filters")
+    workflow_id = _create_workflow_with_two_nodes(workflow_name)
+    execution_id = _start_execution(workflow_id, {"test": "phase6_extended_filters"})
+
+    execution_status, execution_body = _request_json("GET", f"/api/executions/{execution_id}")
+    assert execution_status == 200
+    execution_data = execution_body.get("data")
+    assert isinstance(execution_data, dict)
+    tasks = execution_data.get("tasks")
+    assert isinstance(tasks, list)
+    assert len(tasks) >= 2
+
+    task = tasks[0]
+    task_id = int(task.get("id", 0))
+    node_key = str(task.get("node_key", ""))
+    status = str(task.get("status", ""))
+    assert task_id > 0
+    assert node_key != ""
+    assert status != ""
+
+    filtered_tasks_status, filtered_tasks_body = _request_json(
+        "GET",
+        f"/api/tasks?execution_id={execution_id}&status={urllib.parse.quote(status)}&node_key={urllib.parse.quote(node_key)}&sort=id_desc&page=1&page_size=5",
+    )
+    assert filtered_tasks_status == 200
+    filtered_tasks_data = filtered_tasks_body.get("data")
+    filtered_tasks_meta = filtered_tasks_body.get("meta")
+    assert isinstance(filtered_tasks_data, list)
+    assert isinstance(filtered_tasks_meta, dict)
+    assert isinstance(filtered_tasks_meta.get("pagination"), dict)
+    assert any(int(item.get("id", 0)) == task_id for item in filtered_tasks_data)
+
+    started_after = urllib.parse.quote("2000-01-01 00:00:00")
+    started_before = urllib.parse.quote("2100-01-01 00:00:00")
+    filtered_exec_status, filtered_exec_body = _request_json(
+        "GET",
+        f"/api/executions?workflow={urllib.parse.quote(workflow_name)}&started_after={started_after}&started_before={started_before}&sort=id_desc&page=1&page_size=10",
+    )
+    assert filtered_exec_status == 200
+    filtered_exec_data = filtered_exec_body.get("data")
+    filtered_exec_meta = filtered_exec_body.get("meta")
+    assert isinstance(filtered_exec_data, list)
+    assert isinstance(filtered_exec_meta, dict)
+    assert isinstance(filtered_exec_meta.get("pagination"), dict)
+    assert any(int(item.get("id", 0)) == execution_id for item in filtered_exec_data)
+
+    logs_page_1_status, logs_page_1_body = _request_json("GET", f"/api/tasks/{task_id}/logs?level=INFO&cursor=0&limit=1")
+    assert logs_page_1_status == 200
+    assert isinstance(logs_page_1_body.get("data"), list)
+    assert isinstance(logs_page_1_body.get("meta"), dict)
+    next_cursor = int((logs_page_1_body.get("meta") or {}).get("next_cursor", 0))
+    assert next_cursor >= 0
+
+    logs_page_2_status, logs_page_2_body = _request_json("GET", f"/api/tasks/{task_id}/logs?level=INFO&cursor={next_cursor}&limit=10")
+    assert logs_page_2_status == 200
+    assert isinstance(logs_page_2_body.get("data"), list)
+    assert isinstance(logs_page_2_body.get("meta"), dict)
+    assert int((logs_page_2_body.get("meta") or {}).get("next_cursor", 0)) >= next_cursor
+
+    _request_json("POST", f"/api/executions/{execution_id}/cancel")
+
+    audit_status, audit_body = _request_json("GET", "/api/audit-events?event_type=execution_cancel&page=1&page_size=25")
+    assert audit_status == 200
+    audit_data = audit_body.get("data")
+    audit_meta = audit_body.get("meta")
+    assert isinstance(audit_data, list)
+    assert isinstance(audit_meta, dict)
+    assert isinstance(audit_meta.get("pagination"), dict)
+    assert any(item.get("event_type") == "execution_cancel" for item in audit_data)
+
+
+def test_browser_level_action_surfaces_render() -> None:
+    _ensure_authenticated()
+
+    workflow_name = _unique_workflow_name("smoke_phase6_ui")
+    workflow_id = _create_workflow_with_two_nodes(workflow_name)
+    execution_id = _start_execution(workflow_id, {"test": "phase6_browser_surface"})
+
+    routes = {
+        '/': [
+            'id="execution-start-modal"',
+            'id="execution-start-input"',
+        ],
+        f"/executions/{execution_id}": [
+            'class="task-retry-btn"',
+            'class="task-skip-btn"',
+            'class="task-logs-btn"',
+            'id="task-log-level-filter"',
+            'id="task-log-viewer"',
+            'id="confirm-modal"',
+        ],
+        '/dead-letters': [
+            'id="dead-letter-table"',
+            'id="dead-letter-detail-title"',
+            'id="dead-letter-detail-viewer"',
+            'id="dead-letter-note"',
+        ],
+    }
+
+    for path, markers in routes.items():
+        status, html = _request_html(path)
+        assert status == 200
+        assert 'class="app-shell"' in html
+        for marker in markers:
+            assert marker in html, f"missing marker {marker} on {path}"
+
+    _request_json("POST", f"/api/executions/{execution_id}/cancel")
+
+
+def test_accessibility_markup_contracts() -> None:
+    _ensure_authenticated()
+
+    checks = {
+        '/': [
+            r'<label[^>]*>\s*Search',
+            r'<label[^>]*>\s*Sort',
+        ],
+        '/executions': [
+            r'<label[^>]*>\s*Status',
+            r'<label[^>]*>\s*Time Range',
+            r'<label[^>]*>\s*Sort',
+        ],
+        '/dead-letters': [
+            r'<label[^>]*>\s*Triage Note',
+        ],
+        '/settings': [
+            r'<label[^>]*>\s*Theme\s*<select\s+id="theme-selector"',
+            r'id="font-selector"|id="font-pair-selector"',
+        ],
+    }
+
+    for path, patterns in checks.items():
+        status, html = _request_html(path)
+        assert status == 200
+        for pattern in patterns:
+            assert re.search(pattern, html, flags=re.IGNORECASE), f"missing accessibility marker {pattern} on {path}"
+
+
+def test_visual_baseline_structure_contracts() -> None:
+    _ensure_authenticated()
+
+    baseline = {
+        '/': [
+            'class="app-shell"',
+            'class="app-sidebar"',
+            'class="app-header"',
+            'id="workflow-list-table"',
+            'class="workflow-layout"',
+        ],
+        '/executions': [
+            'class="app-shell"',
+            'id="executions-list-table"',
+            'class="table-scroll"',
+        ],
+        '/observability': [
+            'class="app-shell"',
+            'class="observability-cards"',
+            'class="trend-chart"',
+            'id="obs-health-table"',
+        ],
+    }
+
+    for path, markers in baseline.items():
+        status, html = _request_html(path)
+        assert status == 200
+        for marker in markers:
+            assert marker in html, f"missing structural visual marker {marker} on {path}"

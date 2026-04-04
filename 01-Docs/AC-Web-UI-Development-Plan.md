@@ -192,19 +192,24 @@ Completion notes (2026-04-03):
 - Added observability trend charts and diagnostics panel bound to request-id/latency metadata.
 
 ### Phase 6 - Testing, Documentation, and Release Readiness
-- [ ] Expand API integration smoke tests to include all new filter/pagination endpoints.
-- [ ] Add browser-level smoke tests for:
+- [x] Expand API integration smoke tests to include all new filter/pagination endpoints.
+- [x] Add browser-level smoke tests for:
   - start execution
   - task control actions
   - dead-letter triage
-- [ ] Add accessibility checks (focus order, labels, contrast hotspots).
-- [ ] Add visual regression checks for shell and key pages.
-- [ ] Update runbook and development docs for local and docker modes.
-- [ ] Add release checklist and rollback checklist.
+- [x] Add accessibility checks (focus order, labels, contrast hotspots).
+- [x] Add visual regression checks for shell and key pages.
+- [x] Update runbook and development docs for local and docker modes.
+- [x] Add release checklist and rollback checklist.
 
 Definition of done:
 - Repeatable verification workflow exists.
 - UI/API changes are safely releasable.
+
+Completion notes (2026-04-03):
+- Expanded Python smoke tests now cover extended filter/pagination/cursor contracts, browser-level rendered action surfaces, accessibility markup contracts, and visual baseline structure checks.
+- Test suite now passes with Phase 6 coverage included.
+- Added runbook and release/rollback checklist document: `01-Docs/AE-Runbook-and-Release-Checklist.md`.
 
 ## API Gaps to Include in the Plan Backlog
 

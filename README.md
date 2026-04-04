@@ -6,6 +6,7 @@ Single-container workflow orchestration engine using PHP + JavaScript + Python F
 
 - `01-Docs/`
 	- Architecture and implementation document.
+	- Runbook and release/rollback checklist.
 	- Workflow definition JSON schema.
 - `app/`
 	- `php/` backend API and server-rendered UI.

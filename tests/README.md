@@ -22,6 +22,10 @@ These tests call the live API and validate:
 - Audit events endpoint contract
 - Authenticated UI route shell rendering smoke checks
 - Phase 5 UI control rendering checks (refresh/export/poll indicators, trend chart and diagnostics placeholders)
+- Extended filter/pagination/cursor contracts (`started_after`, `started_before`, task `node_key/status`, task log cursor/level)
+- Browser-level rendered action-surface checks for start-execution modal, task controls, and dead-letter triage controls
+- Accessibility markup checks for key form/control surfaces
+- Visual baseline structure checks for shell and key pages
 
 Prerequisites:
 
