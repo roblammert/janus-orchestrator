@@ -622,24 +622,93 @@ function bindExecutionsWorkspace() {
   const workspace = document.getElementById('executions-workspace');
   if (!workspace) return;
 
+  const canOperate = workspace.dataset.canOperate === '1';
   const table = document.getElementById('executions-list-table');
   const statusFilter = document.getElementById('executions-status-filter');
   const timeFilter = document.getElementById('executions-time-filter');
   const sortSelect = document.getElementById('executions-sort');
+  const searchFilter = document.getElementById('executions-search-filter');
+  const autoRefreshToggle = document.getElementById('executions-auto-refresh');
   const refreshBtn = document.getElementById('executions-refresh-btn');
   const exportBtn = document.getElementById('executions-export-csv-btn');
-  if (!table || !statusFilter || !timeFilter || !sortSelect) return;
+  const quickFilters = Array.from(document.querySelectorAll('.execution-quick-filter'));
+  if (!table || !statusFilter || !timeFilter || !sortSelect || !searchFilter) return;
 
   const tbody = table.querySelector('tbody');
   if (!tbody) return;
 
+  const countNodes = {
+    ALL: document.getElementById('executions-count-all'),
+    RUNNING: document.getElementById('executions-count-running'),
+    PENDING: document.getElementById('executions-count-pending'),
+    COMPLETED: document.getElementById('executions-count-completed'),
+    FAILED: document.getElementById('executions-count-failed'),
+    TIMED_OUT: document.getElementById('executions-count-timeout'),
+  };
+
+  const summaryNodes = {
+    total: document.getElementById('executions-summary-total'),
+    active: document.getElementById('executions-summary-active'),
+    completed: document.getElementById('executions-summary-completed'),
+    issues: document.getElementById('executions-summary-issues'),
+    results: document.getElementById('executions-result-summary'),
+  };
+
+  const inspector = {
+    panel: workspace.querySelector('.executions-inspector-panel'),
+    title: document.getElementById('executions-inspector-title'),
+    subtitle: document.getElementById('executions-inspector-subtitle'),
+    status: document.getElementById('executions-inspector-status'),
+    started: document.getElementById('executions-inspector-started'),
+    finished: document.getElementById('executions-inspector-finished'),
+    duration: document.getElementById('executions-inspector-duration'),
+    breakdown: document.getElementById('executions-inspector-task-breakdown'),
+    taskList: document.getElementById('executions-inspector-task-list'),
+    openLink: document.getElementById('executions-inspector-open-link'),
+    cancelBtn: document.getElementById('executions-inspector-cancel-btn'),
+    updated: document.getElementById('executions-last-updated'),
+  };
+
   let rows = Array.from(tbody.querySelectorAll('tr'));
+  let selectedExecutionId = 0;
+
+  function pulseNode(node, className = 'is-updated') {
+    if (!node) return;
+    node.classList.remove(className);
+    // Force reflow so repeated updates can retrigger the animation class.
+    void node.offsetWidth;
+    node.classList.add(className);
+    window.setTimeout(() => node.classList.remove(className), 280);
+  }
+
+  function parseDate(raw) {
+    if (!raw) return null;
+    const date = new Date(String(raw).replace(' ', 'T') + 'Z');
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function formatDuration(startedRaw, finishedRaw, statusRaw) {
+    const startedAt = parseDate(startedRaw);
+    if (!startedAt) return '-';
+
+    const finishedAt = parseDate(finishedRaw);
+    const end = finishedAt || (String(statusRaw) === 'RUNNING' ? new Date() : null);
+    if (!end) return '-';
+
+    const totalSeconds = Math.max(0, Math.floor((end.getTime() - startedAt.getTime()) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  }
 
   function withinRange(startedAtRaw, rangeMode) {
     if (!startedAtRaw || rangeMode === 'all') return true;
 
-    const startedAt = new Date(startedAtRaw.replace(' ', 'T') + 'Z');
-    if (Number.isNaN(startedAt.getTime())) return true;
+    const startedAt = parseDate(startedAtRaw);
+    if (!startedAt) return true;
 
     const now = Date.now();
     const ageMs = now - startedAt.getTime();
@@ -664,17 +733,176 @@ function bindExecutionsWorkspace() {
     return 0;
   }
 
+  function updateSummary(filteredRows) {
+    const statusCounts = {
+      ALL: rows.length,
+      RUNNING: 0,
+      PENDING: 0,
+      COMPLETED: 0,
+      FAILED: 0,
+      TIMED_OUT: 0,
+    };
+
+    rows.forEach((row) => {
+      const status = String(row.dataset.status || '');
+      if (status in statusCounts) statusCounts[status] += 1;
+    });
+
+    Object.entries(countNodes).forEach(([status, node]) => {
+      if (node) node.textContent = String(statusCounts[status] || 0);
+    });
+
+    const active = statusCounts.RUNNING + statusCounts.PENDING;
+    const completed = statusCounts.COMPLETED;
+    const issues = statusCounts.FAILED + statusCounts.TIMED_OUT;
+
+    if (summaryNodes.total) summaryNodes.total.textContent = String(rows.length);
+    if (summaryNodes.active) summaryNodes.active.textContent = String(active);
+    if (summaryNodes.completed) summaryNodes.completed.textContent = String(completed);
+    if (summaryNodes.issues) summaryNodes.issues.textContent = String(issues);
+    pulseNode(summaryNodes.total);
+    pulseNode(summaryNodes.active);
+    pulseNode(summaryNodes.completed);
+    pulseNode(summaryNodes.issues);
+    if (summaryNodes.results) {
+      summaryNodes.results.textContent = `${filteredRows.length} result${filteredRows.length === 1 ? '' : 's'}`;
+    }
+  }
+
+  function setSelectedRow(row) {
+    rows.forEach((candidate) => candidate.classList.remove('is-selected'));
+    if (!row) return;
+    row.classList.add('is-selected');
+  }
+
+  function firstVisibleRow() {
+    return rows.find((row) => row.style.display !== 'none' && !row.hidden) || null;
+  }
+
+  async function ensureSelection() {
+    if (selectedExecutionId > 0) {
+      const selected = rows.find((row) => Number(row.dataset.executionId || 0) === selectedExecutionId) || null;
+      if (selected) {
+        setSelectedRow(selected);
+        await loadExecutionInspector(selectedExecutionId, selected);
+        return;
+      }
+    }
+
+    const fallback = firstVisibleRow();
+    if (!fallback) {
+      selectedExecutionId = 0;
+      renderInspectorPlaceholder();
+      return;
+    }
+
+    selectedExecutionId = Number(fallback.dataset.executionId || 0);
+    setSelectedRow(fallback);
+    await loadExecutionInspector(selectedExecutionId, fallback);
+  }
+
+  function renderInspectorPlaceholder() {
+    if (inspector.panel) inspector.panel.dataset.executionStatus = 'unknown';
+    if (inspector.title) inspector.title.textContent = 'Select an execution';
+    if (inspector.subtitle) inspector.subtitle.textContent = 'Choose a row to inspect runtime details and task distribution.';
+    if (inspector.status) inspector.status.textContent = '-';
+    if (inspector.started) inspector.started.textContent = '-';
+    if (inspector.finished) inspector.finished.textContent = '-';
+    if (inspector.duration) inspector.duration.textContent = '-';
+    if (inspector.breakdown) {
+      inspector.breakdown.innerHTML = '<span>Total tasks: -</span><span>Completed: -</span><span>Running: -</span><span>Failed: -</span><span>Skipped: -</span>';
+    }
+    if (inspector.taskList) inspector.taskList.textContent = 'No execution selected.';
+    if (inspector.openLink) inspector.openLink.href = '/executions';
+    if (inspector.cancelBtn) {
+      inspector.cancelBtn.hidden = true;
+      inspector.cancelBtn.dataset.executionId = '';
+    }
+    if (inspector.updated) inspector.updated.textContent = 'Not loaded';
+  }
+
+  async function loadExecutionInspector(executionId, row) {
+    if (!executionId || !row) {
+      renderInspectorPlaceholder();
+      return;
+    }
+
+    const status = String(row.dataset.status || 'UNKNOWN');
+    const statusClass = statusClassFromValue(status);
+    const startedAt = String(row.dataset.startedAt || '');
+    const finishedAt = String(row.dataset.finishedAt || '');
+    const workflowName = String(row.dataset.workflowName || '');
+    const workflowVersion = String(row.dataset.workflowVersion || '');
+
+    if (inspector.panel) inspector.panel.dataset.executionStatus = statusClass;
+    if (inspector.title) inspector.title.textContent = `Execution #${executionId}`;
+    if (inspector.subtitle) inspector.subtitle.textContent = `${workflowName} v${workflowVersion}`;
+    if (inspector.status) inspector.status.innerHTML = statusPillMarkup(status);
+    if (inspector.started) inspector.started.textContent = startedAt || '-';
+    if (inspector.finished) inspector.finished.textContent = finishedAt || '-';
+    if (inspector.duration) inspector.duration.textContent = formatDuration(startedAt, finishedAt, status);
+    if (inspector.openLink) inspector.openLink.href = `/executions/${executionId}`;
+    if (inspector.cancelBtn) {
+      const cancellable = canOperate && (status === 'PENDING' || status === 'RUNNING');
+      inspector.cancelBtn.hidden = !cancellable;
+      inspector.cancelBtn.dataset.executionId = String(executionId);
+    }
+    if (inspector.taskList) inspector.taskList.textContent = 'Loading task details...';
+
+    try {
+      const execution = await api(`/api/executions/${executionId}`);
+      const tasks = Array.isArray(execution.tasks) ? execution.tasks : [];
+      const counts = {
+        total: tasks.length,
+        completed: tasks.filter((task) => String(task.status) === 'COMPLETED').length,
+        running: tasks.filter((task) => String(task.status) === 'RUNNING').length,
+        failed: tasks.filter((task) => String(task.status).startsWith('FAILED')).length,
+        skipped: tasks.filter((task) => String(task.status) === 'SKIPPED').length,
+      };
+
+      if (inspector.breakdown) {
+        inspector.breakdown.innerHTML = `
+          <span>Total tasks: ${counts.total}</span>
+          <span>Completed: ${counts.completed}</span>
+          <span>Running: ${counts.running}</span>
+          <span>Failed: ${counts.failed}</span>
+          <span>Skipped: ${counts.skipped}</span>
+        `;
+      }
+
+      const recent = tasks.slice(0, 8).map((task) => {
+        const key = String(task.node_key || 'task');
+        const state = String(task.status || 'UNKNOWN');
+        return `• ${key} ${state}`;
+      });
+      if (inspector.taskList) {
+        inspector.taskList.textContent = recent.length > 0 ? recent.join('\n') : 'No tasks available yet.';
+        pulseNode(inspector.taskList);
+      }
+      if (inspector.updated) {
+        inspector.updated.textContent = `Updated ${formatNowTime()}`;
+      }
+    } catch (error) {
+      if (inspector.taskList) {
+        inspector.taskList.textContent = `Unable to load details: ${error.message}`;
+      }
+    }
+  }
+
   function applyFilters() {
     const statusMode = statusFilter.value;
     const timeMode = timeFilter.value;
     const sortMode = sortSelect.value;
+    const needle = searchFilter.value.trim().toLowerCase();
 
     const filtered = rows.filter((row) => {
       const status = String(row.dataset.status || '');
       const startedAt = String(row.dataset.startedAt || '');
+      const workflowName = String(row.dataset.workflowName || '').toLowerCase();
       const statusOk = statusMode === 'ALL' || status === statusMode;
       const timeOk = withinRange(startedAt, timeMode);
-      const show = statusOk && timeOk;
+      const textOk = needle === '' || workflowName.includes(needle) || String(row.dataset.executionId || '').includes(needle);
+      const show = statusOk && timeOk && textOk;
       row.style.display = show ? '' : 'none';
       return show;
     });
@@ -696,7 +924,21 @@ function bindExecutionsWorkspace() {
 
     filtered.forEach((row) => tbody.appendChild(row));
     applyVirtualizedRows(tbody, filtered, 'executions');
+    updateSummary(filtered);
     setEmptyState('executions-empty-state', filtered.length === 0);
+
+    if (selectedExecutionId > 0) {
+      const selectedRow = filtered.find((row) => Number(row.dataset.executionId || 0) === selectedExecutionId) || null;
+      setSelectedRow(selectedRow);
+      if (!selectedRow) {
+        selectedExecutionId = 0;
+        renderInspectorPlaceholder();
+      }
+      return;
+    }
+
+    const firstVisible = filtered.find((row) => !row.hidden) || null;
+    setSelectedRow(firstVisible);
   }
 
   async function refreshExecutions() {
@@ -714,6 +956,14 @@ function bindExecutionsWorkspace() {
       tr.dataset.executionId = String(execution.id || 0);
       tr.dataset.status = String(execution.status || '');
       tr.dataset.startedAt = String(execution.started_at || '');
+      tr.dataset.finishedAt = String(execution.finished_at || '');
+      tr.dataset.workflowName = String(execution.workflow_name || '');
+      tr.dataset.workflowVersion = String(execution.workflow_version || '');
+
+      const cancelMarkup = canOperate && (execution.status === 'PENDING' || execution.status === 'RUNNING')
+        ? `<button class="cancel-execution-btn" data-execution-id="${execution.id}">Cancel</button>`
+        : '';
+
       tr.innerHTML = `
         <td>${execution.id}</td>
         <td>${execution.workflow_name}</td>
@@ -721,7 +971,7 @@ function bindExecutionsWorkspace() {
         <td>${statusPillMarkup(execution.status)}</td>
         <td>${execution.started_at || ''}</td>
         <td>${execution.finished_at || ''}</td>
-        <td><a href="/executions/${execution.id}">View</a></td>
+        <td class="task-actions-cell"><div class="task-actions-stack"><a href="/executions/${execution.id}">View</a>${cancelMarkup}</div></td>
       `;
       tbody.appendChild(tr);
     });
@@ -729,12 +979,37 @@ function bindExecutionsWorkspace() {
     rows = Array.from(tbody.querySelectorAll('tr'));
     bindExecutionCancelButtons();
     applyFilters();
+
+    await ensureSelection();
+
     setLoadingState(table, false);
   }
 
   statusFilter.addEventListener('change', applyFilters);
   timeFilter.addEventListener('change', applyFilters);
   sortSelect.addEventListener('change', applyFilters);
+  searchFilter.addEventListener('input', applyFilters);
+
+  quickFilters.forEach((button) => {
+    button.addEventListener('click', () => {
+      statusFilter.value = String(button.dataset.status || 'ALL');
+      quickFilters.forEach((candidate) => candidate.classList.toggle('is-active', candidate === button));
+      applyFilters();
+    });
+  });
+
+  tbody.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest('a') || target.closest('button')) return;
+    const row = target.closest('tr');
+    if (!(row instanceof HTMLTableRowElement)) return;
+    const executionId = Number(row.dataset.executionId || 0);
+    if (executionId <= 0) return;
+    selectedExecutionId = executionId;
+    setSelectedRow(row);
+    loadExecutionInspector(executionId, row);
+  });
 
   if (refreshBtn) {
     refreshBtn.addEventListener('click', withBusyIndicator(refreshBtn, 'executions-poll-indicator', 'Refreshing...', 'Updated', refreshExecutions));
@@ -758,12 +1033,40 @@ function bindExecutionsWorkspace() {
     });
   }
 
+  if (inspector.cancelBtn) {
+    inspector.cancelBtn.addEventListener('click', async () => {
+      const executionId = Number(inspector.cancelBtn?.dataset.executionId || 0);
+      if (executionId <= 0) return;
+      const ok = await confirmAction('Cancel this execution? Running and queued tasks will be skipped.');
+      if (!ok) return;
+      await api(`/api/executions/${executionId}/cancel`, 'POST');
+      window.JanusUI.showToast('Execution cancelled', 'success');
+      await refreshExecutions();
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.target instanceof HTMLInputElement) || (event.target instanceof HTMLTextAreaElement)) return;
+    if (event.key === '/') {
+      event.preventDefault();
+      searchFilter.focus();
+      searchFilter.select();
+    }
+    if (event.key.toLowerCase() === 'r') {
+      event.preventDefault();
+      if (refreshBtn) refreshBtn.click();
+    }
+  });
+
   applyFilters();
+  ensureSelection();
+
   setInterval(() => {
-    if (!document.hidden) {
+    const autoRefreshEnabled = autoRefreshToggle ? autoRefreshToggle.checked : true;
+    if (!document.hidden && autoRefreshEnabled) {
       setPollIndicator('executions-poll-indicator', 'Polling...', 'busy');
       refreshExecutions().then(() => {
-        setPollIndicator('executions-poll-indicator', `Updated ${formatNowTime()}`);
+        setPollIndicator('executions-poll-indicator', `Updated ${formatNowTime()}`, 'idle');
       }).catch(() => {
         setPollIndicator('executions-poll-indicator', 'Polling error', 'error');
       });

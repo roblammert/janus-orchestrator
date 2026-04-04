@@ -24,6 +24,276 @@
   margin-bottom: var(--space-3);
 }
 
+.executions-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.executions-summary-card {
+  min-height: 116px;
+}
+
+.executions-summary-card h3 {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.executions-summary-card .metric-value {
+  margin: var(--space-1) 0;
+}
+
+.executions-auto-refresh-toggle {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  align-self: end;
+  min-height: var(--control-height);
+  padding-left: var(--space-1);
+}
+
+.executions-auto-refresh-toggle span {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.execution-quick-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.execution-quick-filter.is-active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface) 88%);
+}
+
+.execution-workspace-layout {
+  align-items: start;
+}
+
+#executions-workspace .workflow-list-panel,
+#executions-workspace .workflow-detail-panel {
+  min-height: 0;
+}
+
+#executions-workspace .executions-summary-card {
+  min-height: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--color-accent) 9%, var(--color-surface) 91%) 0%,
+      var(--color-surface) 100%);
+}
+
+#executions-workspace .executions-summary-card .workflow-detail-meta {
+  margin-bottom: 0;
+}
+
+.execution-table-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 88%, var(--color-accent) 12%);
+}
+
+.execution-table-heading h3 {
+  margin: 0;
+}
+
+.executions-inspector-panel {
+  position: sticky;
+  top: var(--space-3);
+  position: sticky;
+  overflow: hidden;
+}
+
+.executions-inspector-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--color-border) 85%, transparent);
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.executions-inspector-panel[data-execution-status="running"]::before,
+.executions-inspector-panel[data-execution-status="pending"]::before,
+.executions-inspector-panel[data-execution-status="ready"]::before {
+  background: color-mix(in srgb, var(--color-info) 75%, var(--color-border) 25%);
+}
+
+.executions-inspector-panel[data-execution-status="completed"]::before,
+.executions-inspector-panel[data-execution-status="success"]::before {
+  background: color-mix(in srgb, var(--color-success) 75%, var(--color-border) 25%);
+}
+
+.executions-inspector-panel[data-execution-status="failed"]::before,
+.executions-inspector-panel[data-execution-status="failed-permanently"]::before,
+.executions-inspector-panel[data-execution-status="timed-out"]::before {
+  background: color-mix(in srgb, var(--color-danger) 75%, var(--color-border) 25%);
+}
+
+.executions-inspector-panel[data-execution-status="cancelled"]::before,
+.executions-inspector-panel[data-execution-status="skipped"]::before {
+  background: color-mix(in srgb, var(--color-warning) 70%, var(--color-border) 30%);
+}
+
+#executions-workspace .workflow-layout {
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+#executions-workspace .workflow-list-panel,
+#executions-workspace .executions-inspector-panel {
+  padding: var(--space-3);
+}
+
+#executions-workspace .execution-meta-card {
+  padding: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, var(--color-accent) 12%);
+  background: color-mix(in srgb, var(--color-surface) 96%, var(--color-bg) 4%);
+  transition: border-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+#executions-inspector-task-list {
+  min-height: 164px;
+  line-height: 1.4;
+}
+
+#executions-workspace .workflow-toolbar {
+  margin-bottom: var(--space-2);
+  align-items: end;
+}
+
+#executions-workspace .toolbar-actions {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+#executions-workspace .dead-letter-toolbar {
+  margin: 0 0 var(--space-2) 0;
+}
+
+#executions-workspace .executions-tips {
+  margin: 0 0 var(--space-2) 0;
+}
+
+#executions-workspace .workflow-detail-meta {
+  margin-bottom: var(--space-1);
+}
+
+#executions-workspace .execution-table-heading {
+  margin-bottom: var(--space-2);
+}
+
+#executions-workspace .execution-table-heading .workflow-detail-meta {
+  margin: 0;
+}
+
+#executions-workspace .executions-inspector-panel > h4 {
+  margin: var(--space-2) 0 var(--space-1) 0;
+}
+
+#executions-workspace .execution-actions {
+  margin-top: var(--space-2);
+  margin-bottom: 0;
+  gap: var(--space-2);
+}
+
+#executions-workspace .table-scroll {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+#executions-workspace #executions-list-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#executions-workspace #executions-list-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-bg) 6%);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-border) 85%, transparent);
+}
+
+#executions-workspace #executions-list-table tbody tr {
+  transition: background-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+#executions-workspace #executions-list-table tbody tr:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface) 92%);
+}
+
+#executions-workspace #executions-list-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--color-accent) 15%, var(--color-surface) 85%);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+#executions-workspace .executions-inspector-panel > h4 {
+  padding-top: var(--space-1);
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 86%, transparent);
+}
+
+#executions-inspector-task-breakdown span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#executions-inspector-task-breakdown span::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 55%, var(--color-border) 45%);
+}
+
+#executions-workspace .metric-value {
+  transition: transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+#executions-workspace .metric-value.is-updated {
+  transform: translateY(-1px);
+  color: color-mix(in srgb, var(--color-accent) 72%, var(--color-text) 28%);
+}
+
+#executions-inspector-task-list.is-updated {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border) 55%);
+}
+
+#executions-workspace #executions-list-table th,
+#executions-workspace #executions-list-table td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  border-color: var(--color-accent);
+}
+
 .toolbar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -559,6 +829,11 @@
   .workflow-toolbar,
   .workflow-layout {
     grid-template-columns: 1fr;
+  }
+
+  .execution-table-heading {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .execution-layout {

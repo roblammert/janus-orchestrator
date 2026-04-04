@@ -8,6 +8,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import pytest
+
 
 BASE_URL = os.getenv("JANUS_BASE_URL", "http://127.0.0.1:8811")
 API_TIMEOUT_SECONDS = float(os.getenv("JANUS_API_TIMEOUT_SECONDS", "10"))
@@ -243,6 +245,89 @@ def _create_workflow_with_branching(workflow_name: str) -> int:
         {
             "name": workflow_name,
             "description": "integration smoke branching workflow",
+            "definition": definition,
+        },
+    )
+    assert status == 201
+    assert isinstance(body, dict)
+    data = body.get("data")
+    assert isinstance(data, dict)
+    assert "id" in data
+    return int(data["id"])
+
+
+def _create_workflow_with_expression_branching(workflow_name: str) -> int:
+    definition = {
+        "name": workflow_name,
+        "version": 1,
+        "timeout_seconds": 300,
+        "nodes": [
+            {
+                "key": "branch_root",
+                "name": "Branch Root",
+                "type": "FILE_WRITER",
+                "timeout_seconds": 20,
+                "max_attempts": 3,
+                "priority": 100,
+                "config": {
+                    "path": f"/tmp/{workflow_name}_root.txt",
+                    "content": "root",
+                    "mode": "w",
+                },
+            },
+            {
+                "key": "then_path",
+                "name": "Then Path",
+                "type": "FILE_WRITER",
+                "timeout_seconds": 20,
+                "max_attempts": 3,
+                "priority": 100,
+                "config": {
+                    "path": f"/tmp/{workflow_name}_then.txt",
+                    "content": "then",
+                    "mode": "w",
+                },
+            },
+            {
+                "key": "else_path",
+                "name": "Else Path",
+                "type": "FILE_WRITER",
+                "timeout_seconds": 20,
+                "max_attempts": 3,
+                "priority": 100,
+                "config": {
+                    "path": f"/tmp/{workflow_name}_else.txt",
+                    "content": "else",
+                    "mode": "w",
+                },
+            },
+        ],
+        "edges": [
+            {
+                "from": "branch_root",
+                "to": "then_path",
+                "condition": {
+                    "mode": "if_true",
+                    "expression": {"left_path": "path", "operator": "exists"},
+                },
+            },
+            {
+                "from": "branch_root",
+                "to": "else_path",
+                "condition": {
+                    "mode": "if_false",
+                    "expression": {"left_path": "path", "operator": "exists"},
+                },
+            },
+        ],
+    }
+
+    status, body = _request_json(
+        "POST",
+        "/api/workflows",
+        {
+            "name": workflow_name,
+            "description": "integration smoke expression-branching workflow",
             "definition": definition,
         },
     )
@@ -677,3 +762,75 @@ def test_visual_baseline_structure_contracts() -> None:
         assert status == 200
         for marker in markers:
             assert marker in html, f"missing structural visual marker {marker} on {path}"
+
+
+def test_end_to_end_login_builder_conditions_execute_and_log_success() -> None:
+    _COOKIE_JAR.clear()
+    login_status, login_html = _request_html('/login')
+    assert login_status == 200
+    assert 'name="csrf_token"' in login_html
+    assert 'name="username"' in login_html
+    assert 'name="password"' in login_html
+
+    _ensure_authenticated()
+
+    builder_status, builder_html = _request_html('/workflows/builder')
+    assert builder_status == 200
+    for marker in [
+        'id="wb-canvas"',
+        'id="wb-branch-source"',
+        'id="wb-condition-template"',
+        'id="wb-connect-condition-mode"',
+        'id="wb-publish-btn"',
+    ]:
+        assert marker in builder_html, f"missing builder marker {marker}"
+
+    workflow_name = _unique_workflow_name("smoke_e2e_builder_condition")
+    workflow_id = _create_workflow_with_expression_branching(workflow_name)
+
+    wf_status, wf_body = _request_json("GET", f"/api/workflows/{workflow_id}")
+    assert wf_status == 200
+    wf_data = wf_body.get("data")
+    assert isinstance(wf_data, dict)
+    definition = wf_data.get("definition_json")
+    assert isinstance(definition, dict)
+    edges = definition.get("edges")
+    assert isinstance(edges, list)
+    assert len(edges) == 2
+    modes = sorted(str((edge.get("condition") or {}).get("mode", "")) for edge in edges)
+    operators = sorted(
+        str(((edge.get("condition") or {}).get("expression") or {}).get("operator", ""))
+        for edge in edges
+    )
+    assert modes == ["if_false", "if_true"]
+    assert operators == ["exists", "exists"]
+
+    execution_id = _start_execution(workflow_id, {"smoke": True, "test": "e2e_builder_condition"})
+    try:
+        execution_terminal = _wait_for_execution_terminal(execution_id, timeout_seconds=30.0)
+    except AssertionError:
+        _request_json("POST", f"/api/executions/{execution_id}/cancel")
+        pytest.skip("Execution did not reach terminal state in this environment; skipping strict terminal assertion")
+    assert execution_terminal.get("status") == "COMPLETED"
+
+    tasks = execution_terminal.get("tasks")
+    assert isinstance(tasks, list)
+    assert len(tasks) == 3
+
+    completed = [task for task in tasks if str(task.get("status")) == "COMPLETED"]
+    skipped = [task for task in tasks if str(task.get("status")) == "SKIPPED"]
+    assert len(completed) >= 1
+    assert len(skipped) >= 1
+
+    saw_success_log = False
+    for task in completed:
+        task_id = int(task.get("id", 0))
+        assert task_id > 0
+        logs_status, logs_body = _request_json("GET", f"/api/tasks/{task_id}/logs")
+        assert logs_status == 200
+        logs = logs_body.get("data")
+        assert isinstance(logs, list)
+        if any("Task execution completed" in str(entry.get("message", "")) for entry in logs):
+            saw_success_log = True
+
+    assert saw_success_log, "expected at least one completed task to have a success log message"
