@@ -135,6 +135,13 @@ pre {
   color: var(--color-text);
 }
 
+.nav-link-subpage {
+  margin-left: var(--space-3);
+  font-size: var(--text-xs);
+  border-left: 2px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
 .header-controls {
   display: flex;
   align-items: center;

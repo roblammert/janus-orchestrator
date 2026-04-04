@@ -110,6 +110,11 @@ try {
         exit;
     }
 
+    if ($method === 'GET' && $path === '/workflows/builder') {
+        View::render('workflow_builder', ['user' => $user], AppShell::meta('Workflow Builder', $user, $shellExtra));
+        exit;
+    }
+
     if ($method === 'GET' && $path === '/audit') {
         $authService->requireRolePage('ADMIN');
         $events = $auditService->listEventsPage(1, 100);

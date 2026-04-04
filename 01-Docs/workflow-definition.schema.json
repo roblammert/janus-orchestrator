@@ -78,7 +78,43 @@
             "type": "string"
           },
           "condition": {
-            "type": "object"
+            "type": "object",
+            "required": ["mode"],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["if_true", "if_false"]
+              },
+              "expression": {
+                "type": "object",
+                "required": ["left_path", "operator"],
+                "properties": {
+                  "left_path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "operator": {
+                    "type": "string",
+                    "enum": ["truthy", "equals", "not_equals", "contains", "gt", "gte", "lt", "lte", "exists", "empty"]
+                  },
+                  "right_value": {}
+                },
+                "additionalProperties": false
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "anyOf": [
+              {
+                "required": ["expression"]
+              },
+              {
+                "required": ["path"]
+              }
+            ],
+            "additionalProperties": false
           }
         }
       }

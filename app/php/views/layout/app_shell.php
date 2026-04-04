@@ -76,8 +76,16 @@ $csrfToken = (string)($pageMeta['csrfToken'] ?? '');
                     <?php
                     $href = (string)($item['href'] ?? '#');
                     $active = $currentPath === $href;
+                    $isSubpage = (bool)($item['subpage'] ?? false);
+                    $navClass = 'nav-link';
+                    if ($active) {
+                        $navClass .= ' is-active';
+                    }
+                    if ($isSubpage) {
+                        $navClass .= ' nav-link-subpage';
+                    }
                     ?>
-                    <a class="nav-link<?= $active ? ' is-active' : '' ?>" href="<?= htmlspecialchars($href) ?>">
+                    <a class="<?= htmlspecialchars($navClass) ?>" href="<?= htmlspecialchars($href) ?>">
                         <?= htmlspecialchars((string)($item['label'] ?? '')) ?>
                     </a>
                 <?php endforeach; ?>

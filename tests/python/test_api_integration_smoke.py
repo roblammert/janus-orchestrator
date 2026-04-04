@@ -174,6 +174,86 @@ def _start_execution(workflow_id: int, input_payload: dict) -> int:
     return int(data["execution_id"])
 
 
+def _wait_for_execution_terminal(execution_id: int, timeout_seconds: float = 20.0) -> dict:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        execution = _get_execution(execution_id)
+        status = str(execution.get("status", ""))
+        if status in {"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"}:
+            return execution
+        time.sleep(0.5)
+    raise AssertionError(f"Execution {execution_id} did not reach terminal state within {timeout_seconds}s")
+
+
+def _create_workflow_with_branching(workflow_name: str) -> int:
+    definition = {
+        "name": workflow_name,
+        "version": 1,
+        "timeout_seconds": 300,
+        "nodes": [
+            {
+                "key": "branch_root",
+                "name": "Branch Root",
+                "type": "FILE_WRITER",
+                "timeout_seconds": 20,
+                "max_attempts": 3,
+                "priority": 100,
+                "config": {
+                    "path": f"/tmp/{workflow_name}_root.txt",
+                    "content": "root",
+                    "mode": "w",
+                },
+            },
+            {
+                "key": "then_path",
+                "name": "Then Path",
+                "type": "FILE_WRITER",
+                "timeout_seconds": 20,
+                "max_attempts": 3,
+                "priority": 100,
+                "config": {
+                    "path": f"/tmp/{workflow_name}_then.txt",
+                    "content": "then",
+                    "mode": "w",
+                },
+            },
+            {
+                "key": "else_path",
+                "name": "Else Path",
+                "type": "FILE_WRITER",
+                "timeout_seconds": 20,
+                "max_attempts": 3,
+                "priority": 100,
+                "config": {
+                    "path": f"/tmp/{workflow_name}_else.txt",
+                    "content": "else",
+                    "mode": "w",
+                },
+            },
+        ],
+        "edges": [
+            {"from": "branch_root", "to": "then_path", "condition": {"mode": "if_true", "path": "idempotent_noop"}},
+            {"from": "branch_root", "to": "else_path", "condition": {"mode": "if_false", "path": "idempotent_noop"}},
+        ],
+    }
+
+    status, body = _request_json(
+        "POST",
+        "/api/workflows",
+        {
+            "name": workflow_name,
+            "description": "integration smoke branching workflow",
+            "definition": definition,
+        },
+    )
+    assert status == 201
+    assert isinstance(body, dict)
+    data = body.get("data")
+    assert isinstance(data, dict)
+    assert "id" in data
+    return int(data["id"])
+
+
 def _get_execution(execution_id: int) -> dict:
     status, body = _request_json("GET", f"/api/executions/{execution_id}")
     assert status == 200
@@ -203,6 +283,29 @@ def test_execution_lifecycle_cancel_flow() -> None:
 
     task_statuses = [task["status"] for task in execution_after_cancel["tasks"]]
     assert all(status == "SKIPPED" for status in task_statuses)
+
+
+def test_conditional_branching_if_then_else_definition_contract() -> None:
+    _ensure_authenticated()
+    workflow_name = _unique_workflow_name("smoke_branching")
+    workflow_id = _create_workflow_with_branching(workflow_name)
+
+    wf_status, wf_body = _request_json("GET", f"/api/workflows/{workflow_id}")
+    assert wf_status == 200
+    wf_data = wf_body.get("data")
+    assert isinstance(wf_data, dict)
+    definition = wf_data.get("definition_json")
+    assert isinstance(definition, dict)
+    edges = definition.get("edges")
+    assert isinstance(edges, list)
+    assert len(edges) == 2
+    modes = sorted(str((edge.get("condition") or {}).get("mode", "")) for edge in edges)
+    paths = sorted(str((edge.get("condition") or {}).get("path", "")) for edge in edges)
+    assert modes == ["if_false", "if_true"]
+    assert paths == ["idempotent_noop", "idempotent_noop"]
+
+    execution_id = _start_execution(workflow_id, {"smoke": True, "test": "conditional_branching"})
+    _request_json("POST", f"/api/executions/{execution_id}/cancel")
 
 
 def test_manual_task_controls_retry_skip_complete_and_logs() -> None:
@@ -327,6 +430,7 @@ def test_authenticated_ui_routes_render_shell() -> None:
 
     pages = [
         "/",
+        "/workflows/builder",
         "/executions",
         "/dead-letters",
         "/observability",
@@ -341,6 +445,22 @@ def test_authenticated_ui_routes_render_shell() -> None:
         assert 'class="app-shell"' in html
         assert 'Janus Orchestrator' in html
         assert '/assets/app.js' in html
+
+
+def test_workflow_builder_page_renders_graphical_surface() -> None:
+    _ensure_authenticated()
+
+    status, html = _request_html('/workflows/builder')
+    assert status == 200
+    assert 'id="workflow-builder-workspace"' in html
+    assert 'id="wb-canvas"' in html
+    assert 'id="wb-node-layer"' in html
+    assert 'id="wb-edge-layer"' in html
+    assert 'id="wb-json-preview"' in html
+    assert 'id="wb-condition-template"' in html
+    assert 'id="wb-existing-workflow"' in html
+    assert 'id="wb-load-existing-btn"' in html
+    assert 'nav-link-subpage' in html
 
 
 def test_phase5_ui_controls_render_on_key_pages() -> None:

@@ -246,6 +246,39 @@ final class WorkflowService
             } elseif (!isset($keys[$from]) || !isset($keys[$to])) {
                 $errors[] = ['field' => "definition.edges[$idx]", 'message' => 'edge references unknown node key'];
             }
+
+            if (array_key_exists('condition', $edge)) {
+                if (!is_array($edge['condition'])) {
+                    $errors[] = ['field' => "definition.edges[$idx].condition", 'message' => 'condition must be an object'];
+                } else {
+                    $mode = trim((string)($edge['condition']['mode'] ?? ''));
+                    if (!in_array($mode, ['if_true', 'if_false'], true)) {
+                        $errors[] = ['field' => "definition.edges[$idx].condition.mode", 'message' => 'condition.mode must be if_true or if_false'];
+                    }
+
+                    $expression = $edge['condition']['expression'] ?? null;
+                    if (is_array($expression)) {
+                        $leftPath = trim((string)($expression['left_path'] ?? ''));
+                        $operator = trim((string)($expression['operator'] ?? ''));
+                        $validOperators = ['truthy', 'equals', 'not_equals', 'contains', 'gt', 'gte', 'lt', 'lte', 'exists', 'empty'];
+                        if ($leftPath === '') {
+                            $errors[] = ['field' => "definition.edges[$idx].condition.expression.left_path", 'message' => 'left_path is required'];
+                        }
+                        if (!in_array($operator, $validOperators, true)) {
+                            $errors[] = ['field' => "definition.edges[$idx].condition.expression.operator", 'message' => 'invalid operator'];
+                        }
+                        $operatorsRequiringValue = ['equals', 'not_equals', 'contains', 'gt', 'gte', 'lt', 'lte'];
+                        if (in_array($operator, $operatorsRequiringValue, true) && !array_key_exists('right_value', $expression)) {
+                            $errors[] = ['field' => "definition.edges[$idx].condition.expression.right_value", 'message' => 'right_value is required for selected operator'];
+                        }
+                    } else {
+                        $path = trim((string)($edge['condition']['path'] ?? ''));
+                        if ($path === '') {
+                            $errors[] = ['field' => "definition.edges[$idx].condition.expression.left_path", 'message' => 'condition expression is required'];
+                        }
+                    }
+                }
+            }
         }
 
         return $errors;

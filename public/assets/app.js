@@ -524,23 +524,24 @@ function bindObservabilityWorkspace() {
       const payload = await api('/api/metrics/overview');
       const executionCounts = payload.execution_counts || [];
       const taskCounts = payload.task_counts || [];
+      const readCount = (item) => Number(item.total ?? item.count ?? 0);
       if (executionNode) {
-        executionNode.textContent = executionCounts.map((item) => `${item.status}: ${item.count}`).join('\n') || 'No execution data';
+        executionNode.textContent = executionCounts.map((item) => `${item.status}: ${readCount(item)}`).join('\n') || 'No execution data';
       }
       if (taskNode) {
-        taskNode.textContent = taskCounts.map((item) => `${item.status}: ${item.count}`).join('\n') || 'No task data';
+        taskNode.textContent = taskCounts.map((item) => `${item.status}: ${readCount(item)}`).join('\n') || 'No task data';
       }
       if (avgNode) {
         avgNode.textContent = String(payload.avg_task_duration_seconds ?? 'n/a');
       }
 
-      const throughput = executionCounts.reduce((acc, item) => acc + Number(item.count || 0), 0);
+      const throughput = executionCounts.reduce((acc, item) => acc + readCount(item), 0);
       const failed = executionCounts
         .filter((item) => ['FAILED', 'TIMED_OUT', 'CANCELLED'].includes(String(item.status || '').toUpperCase()))
-        .reduce((acc, item) => acc + Number(item.count || 0), 0);
+        .reduce((acc, item) => acc + readCount(item), 0);
       const retryPressure = taskCounts
         .filter((item) => ['FAILED', 'FAILED_PERMANENTLY', 'READY'].includes(String(item.status || '').toUpperCase()))
-        .reduce((acc, item) => acc + Number(item.count || 0), 0);
+        .reduce((acc, item) => acc + readCount(item), 0);
 
       pushTrend(throughputTrend, throughput);
       pushTrend(failureTrend, failed + retryPressure);
@@ -1219,6 +1220,1146 @@ async function refreshExecutionTasks() {
   }
 }
 
+function bindWorkflowBuilder() {
+  const workspace = document.getElementById('workflow-builder-workspace');
+  if (!workspace) return;
+
+  const canvas = document.getElementById('wb-canvas');
+  const edgeLayer = document.getElementById('wb-edge-layer');
+  const nodeLayer = document.getElementById('wb-node-layer');
+  const nodeTableBody = document.querySelector('#wb-node-table tbody');
+  const edgeTableBody = document.querySelector('#wb-edge-table tbody');
+  const connectFrom = document.getElementById('wb-connect-from');
+  const connectTo = document.getElementById('wb-connect-to');
+  const branchSource = document.getElementById('wb-branch-source');
+  const branchTemplate = document.getElementById('wb-branch-template');
+  const conditionLeftPath = document.getElementById('wb-condition-left-path');
+  const conditionOperator = document.getElementById('wb-condition-operator');
+  const conditionRightValue = document.getElementById('wb-condition-right-value');
+  const conditionTemplate = document.getElementById('wb-condition-template');
+  const conditionValueWrap = document.getElementById('wb-condition-value-wrap');
+  const conditionPreview = document.getElementById('wb-condition-preview');
+  const addThenBranchBtn = document.getElementById('wb-add-then-branch-btn');
+  const addElseBranchBtn = document.getElementById('wb-add-else-branch-btn');
+  const connectConditionMode = document.getElementById('wb-connect-condition-mode');
+  const edgeEditState = document.getElementById('wb-edge-edit-state');
+  const edgeClearSelectionBtn = document.getElementById('wb-edge-clear-selection-btn');
+  const validationOutput = document.getElementById('wb-validation-output');
+  const jsonPreview = document.getElementById('wb-json-preview');
+  const canvasState = document.getElementById('wb-canvas-state');
+
+  const workflowNameInput = document.getElementById('wb-workflow-name');
+  const workflowDescriptionInput = document.getElementById('wb-workflow-description');
+  const workflowVersionInput = document.getElementById('wb-workflow-version');
+  const workflowTimeoutInput = document.getElementById('wb-workflow-timeout');
+  const existingWorkflowSelect = document.getElementById('wb-existing-workflow');
+  const existingVersionSelect = document.getElementById('wb-existing-version');
+  const loadExistingBtn = document.getElementById('wb-load-existing-btn');
+  const editingNote = document.getElementById('wb-editing-note');
+
+  const nodeKeyInput = document.getElementById('wb-node-key');
+  const nodeNameInput = document.getElementById('wb-node-name');
+  const nodeTypeInput = document.getElementById('wb-node-type');
+  const nodeTimeoutInput = document.getElementById('wb-node-timeout');
+  const nodeAttemptsInput = document.getElementById('wb-node-attempts');
+  const nodePriorityInput = document.getElementById('wb-node-priority');
+  const nodeConfigInput = document.getElementById('wb-node-config');
+  const selectedNodeLabel = document.getElementById('wb-selected-node-label');
+
+  const validateBtn = document.getElementById('wb-validate-btn');
+  const autoLayoutBtn = document.getElementById('wb-auto-layout-btn');
+  const exportBtn = document.getElementById('wb-export-json-btn');
+  const importBtn = document.getElementById('wb-import-json-btn');
+  const importInput = document.getElementById('wb-import-json-input');
+  const applyImportBtn = document.getElementById('wb-apply-import-btn');
+  const publishBtn = document.getElementById('wb-publish-btn');
+  const connectBtn = document.getElementById('wb-connect-btn');
+
+  if (!canvas || !edgeLayer || !nodeLayer || !nodeTableBody || !edgeTableBody || !connectFrom || !connectTo || !branchSource || !branchTemplate || !conditionLeftPath || !conditionOperator || !conditionRightValue || !conditionTemplate || !conditionValueWrap || !conditionPreview || !addThenBranchBtn || !addElseBranchBtn || !connectConditionMode || !jsonPreview || !existingWorkflowSelect || !existingVersionSelect || !loadExistingBtn || !editingNote) {
+    return;
+  }
+
+  const NODE_PRESETS = {
+    http_request: {
+      type: 'HTTP',
+      title: 'HTTP Request',
+      baseKey: 'http_request',
+      config: { method: 'GET', url: 'https://example.org', headers: { Accept: 'application/json' } },
+    },
+    webhook_call: {
+      type: 'HTTP',
+      title: 'Webhook Call',
+      baseKey: 'webhook',
+      config: { method: 'POST', url: 'https://example.org/webhook', headers: { 'Content-Type': 'application/json' }, body: { event: 'workflow_event' } },
+    },
+    graphql_query: {
+      type: 'HTTP',
+      title: 'GraphQL Query',
+      baseKey: 'graphql',
+      config: { method: 'POST', url: 'https://example.org/graphql', headers: { 'Content-Type': 'application/json' }, body: { query: '{ health }', variables: {} } },
+    },
+    sql_query: {
+      type: 'SCRIPT',
+      title: 'SQL Query',
+      baseKey: 'sql_query',
+      config: { command: 'echo "Run SQL query here"', shell: true },
+    },
+    python_script: {
+      type: 'SCRIPT',
+      title: 'Python Script',
+      baseKey: 'python_script',
+      config: { command: 'python3 -c "print(\'hello\')"', shell: true },
+    },
+    shell_command: {
+      type: 'SCRIPT',
+      title: 'Shell Command',
+      baseKey: 'shell_cmd',
+      config: { command: 'echo "shell command"', shell: true },
+    },
+    file_writer: {
+      type: 'FILE_WRITER',
+      title: 'File Writer',
+      baseKey: 'file_writer',
+      config: { path: '/tmp/output.txt', content: 'example', mode: 'w' },
+    },
+    delay_timer: {
+      type: 'SCRIPT',
+      title: 'Delay Timer',
+      baseKey: 'delay',
+      config: { command: 'sleep 2', shell: true },
+    },
+    approval_gate: {
+      type: 'SCRIPT',
+      title: 'Approval Gate',
+      baseKey: 'approval',
+      config: { command: 'echo "{\"approved\": true}"', shell: true },
+    },
+    json_transform: {
+      type: 'SCRIPT',
+      title: 'JSON Transform',
+      baseKey: 'json_transform',
+      config: { command: 'echo "{\"result\":{\"approved\":true}}"', shell: true },
+    },
+    email_notification: {
+      type: 'HTTP',
+      title: 'Email Notification',
+      baseKey: 'email',
+      config: { method: 'POST', url: 'https://example.org/email', headers: { 'Content-Type': 'application/json' }, body: { to: 'ops@example.org', subject: 'Workflow update' } },
+    },
+    slack_notification: {
+      type: 'HTTP',
+      title: 'Slack Notification',
+      baseKey: 'slack',
+      config: { method: 'POST', url: 'https://hooks.slack.com/services/example', headers: { 'Content-Type': 'application/json' }, body: { text: 'Workflow update' } },
+    },
+  };
+
+  const CONDITION_TEMPLATES = {
+    custom: null,
+    approved_true: { left_path: 'result.approved', operator: 'equals', right_value: true },
+    approved_false: { left_path: 'result.approved', operator: 'equals', right_value: false },
+    status_success: { left_path: 'result.status', operator: 'equals', right_value: 'success' },
+    status_failed: { left_path: 'result.status', operator: 'equals', right_value: 'failed' },
+    amount_gt_1000: { left_path: 'result.amount', operator: 'gt', right_value: 1000 },
+    amount_lte_1000: { left_path: 'result.amount', operator: 'lte', right_value: 1000 },
+    has_error: { left_path: 'result.error', operator: 'exists' },
+    result_empty: { left_path: 'result', operator: 'empty' },
+  };
+
+  const state = {
+    nodes: [],
+    edges: [],
+    selectedId: null,
+    selectedEdgeIndex: null,
+    drag: null,
+    idSeq: 1,
+    loadedWorkflowVersions: [],
+  };
+
+  function setCanvasState(text) {
+    if (canvasState) {
+      canvasState.textContent = text;
+    }
+  }
+
+  function setEditingNote(text) {
+    if (editingNote) {
+      editingNote.textContent = text;
+    }
+  }
+
+  function uniqueNodeKey(base) {
+    const existing = new Set(state.nodes.map((node) => node.key));
+    let counter = 1;
+    let candidate = `${base}_${counter}`;
+    while (existing.has(candidate)) {
+      counter += 1;
+      candidate = `${base}_${counter}`;
+    }
+    return candidate;
+  }
+
+  function addNode(presetKey, options = {}) {
+    const preset = NODE_PRESETS[presetKey] || NODE_PRESETS.http_request;
+    const id = `n${state.idSeq}`;
+    state.idSeq += 1;
+    const base = String(preset.baseKey || 'node').toLowerCase();
+    const node = {
+      id,
+      key: uniqueNodeKey(base),
+      name: preset.title,
+      type: preset.type,
+      preset: presetKey,
+      timeout_seconds: 30,
+      max_attempts: 3,
+      priority: 100,
+      config: JSON.parse(JSON.stringify(preset.config || {})),
+      x: Number(options.x ?? (80 + ((state.nodes.length * 42) % 420))),
+      y: Number(options.y ?? (72 + ((state.nodes.length * 56) % 280))),
+    };
+    state.nodes.push(node);
+    state.selectedId = node.id;
+    renderAll();
+    return node;
+  }
+
+  function selectedNode() {
+    return state.nodes.find((node) => node.id === state.selectedId) || null;
+  }
+
+  function updateInspector() {
+    const node = selectedNode();
+    if (!node) {
+      if (selectedNodeLabel) selectedNodeLabel.textContent = 'Select a node to edit properties.';
+      if (nodeKeyInput) nodeKeyInput.value = '';
+      if (nodeNameInput) nodeNameInput.value = '';
+      if (nodeTypeInput) nodeTypeInput.value = 'HTTP';
+      if (nodeTimeoutInput) nodeTimeoutInput.value = '30';
+      if (nodeAttemptsInput) nodeAttemptsInput.value = '3';
+      if (nodePriorityInput) nodePriorityInput.value = '100';
+      if (nodeConfigInput) nodeConfigInput.value = '{}';
+      return;
+    }
+
+    if (selectedNodeLabel) selectedNodeLabel.textContent = `Editing node ${node.key}`;
+    if (nodeKeyInput) nodeKeyInput.value = node.key;
+    if (nodeNameInput) nodeNameInput.value = node.name;
+    if (nodeTypeInput) nodeTypeInput.value = node.type;
+    if (nodeTimeoutInput) nodeTimeoutInput.value = String(node.timeout_seconds);
+    if (nodeAttemptsInput) nodeAttemptsInput.value = String(node.max_attempts);
+    if (nodePriorityInput) nodePriorityInput.value = String(node.priority);
+    if (nodeConfigInput) nodeConfigInput.value = JSON.stringify(node.config || {}, null, 2);
+  }
+
+  function nodeCenter(node) {
+    const nodeElement = nodeLayer.querySelector(`[data-node-id="${node.id}"]`);
+    if (nodeElement instanceof HTMLElement) {
+      const width = nodeElement.offsetWidth || 180;
+      const height = nodeElement.offsetHeight || 68;
+      return { x: node.x + width / 2, y: node.y + height / 2 };
+    }
+    return { x: node.x + 90, y: node.y + 34 };
+  }
+
+  function edgeConditionSummary(condition) {
+    if (!condition || typeof condition !== 'object') {
+      return 'always';
+    }
+    const mode = String(condition.mode || 'always');
+    const expression = condition.expression && typeof condition.expression === 'object'
+      ? condition.expression
+      : {
+        left_path: String(condition.path || '').trim(),
+        operator: mode === 'if_false' ? 'not_equals' : 'truthy',
+        right_value: mode === 'if_false' ? true : null,
+      };
+    const leftPath = String(expression.left_path || '').trim() || 'output';
+    const operator = String(expression.operator || 'truthy');
+    const rightValue = expression.right_value;
+
+    const operatorText = {
+      truthy: 'is true',
+      equals: `equals ${JSON.stringify(rightValue)}`,
+      not_equals: `does not equal ${JSON.stringify(rightValue)}`,
+      contains: `contains ${JSON.stringify(rightValue)}`,
+      gt: `is greater than ${JSON.stringify(rightValue)}`,
+      gte: `is greater or equal to ${JSON.stringify(rightValue)}`,
+      lt: `is less than ${JSON.stringify(rightValue)}`,
+      lte: `is less or equal to ${JSON.stringify(rightValue)}`,
+      exists: 'exists',
+      empty: 'is empty',
+    }[operator] || 'matches condition';
+
+    if (mode === 'if_true') {
+      return `if ${leftPath} ${operatorText}`;
+    }
+    if (mode === 'if_false') {
+      return `else when ${leftPath} ${operatorText}`;
+    }
+    return 'always';
+  }
+
+  function operatorNeedsValue(operator) {
+    return !['truthy', 'exists', 'empty'].includes(operator);
+  }
+
+  function parseConditionValue(raw) {
+    const text = String(raw || '').trim();
+    if (text === '') return null;
+    if (text === 'true') return true;
+    if (text === 'false') return false;
+    if (text === 'null') return null;
+    if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
+    if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        return text;
+      }
+    }
+    return text;
+  }
+
+  function setConditionEditorValues(expression) {
+    const normalized = expression || { left_path: 'result.approved', operator: 'truthy' };
+    conditionLeftPath.value = String(normalized.left_path || '');
+    conditionOperator.value = String(normalized.operator || 'truthy');
+    if (Object.prototype.hasOwnProperty.call(normalized, 'right_value')) {
+      const value = normalized.right_value;
+      conditionRightValue.value = value == null ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
+    } else {
+      conditionRightValue.value = '';
+    }
+    updateConditionEditorVisibility();
+    renderConditionPreview();
+  }
+
+  function applyConditionTemplateByKey(key) {
+    const template = CONDITION_TEMPLATES[key] || null;
+    if (!template) {
+      return;
+    }
+    setConditionEditorValues(template);
+  }
+
+  function setEdgeEditStateText(text) {
+    if (edgeEditState) {
+      edgeEditState.textContent = text;
+    }
+  }
+
+  function updateConditionEditorVisibility() {
+    if (!conditionValueWrap) return;
+    const op = String(conditionOperator.value || 'truthy');
+    conditionValueWrap.classList.toggle('is-hidden', !operatorNeedsValue(op));
+  }
+
+  function renderConditionPreview(mode = null) {
+    if (!conditionPreview) return;
+    const effectiveMode = mode || String(connectConditionMode.value || 'always');
+    if (effectiveMode === 'always') {
+      conditionPreview.textContent = 'Condition preview: always run this edge.';
+      return;
+    }
+
+    const left = String(conditionLeftPath.value || '').trim() || 'output';
+    const op = String(conditionOperator.value || 'truthy');
+    const right = parseConditionValue(conditionRightValue.value || '');
+    const expression = { left_path: left, operator: op, right_value: right };
+    const text = edgeConditionSummary({ mode: effectiveMode, expression });
+    conditionPreview.textContent = `Condition preview: ${text}`;
+  }
+
+  function clearEdgeSelection() {
+    state.selectedEdgeIndex = null;
+    setEdgeEditStateText('Adding new edge');
+    if (connectConditionMode) connectConditionMode.value = 'always';
+    if (conditionTemplate) conditionTemplate.value = 'custom';
+    setConditionEditorValues({ left_path: 'result.approved', operator: 'truthy' });
+    renderConditionPreview('always');
+    if (connectBtn) connectBtn.textContent = 'Add Edge';
+  }
+
+  function selectEdge(index) {
+    if (index < 0 || index >= state.edges.length) {
+      clearEdgeSelection();
+      return;
+    }
+    state.selectedEdgeIndex = index;
+    const edge = state.edges[index];
+    if (connectFrom) connectFrom.value = edge.from;
+    if (connectTo) connectTo.value = edge.to;
+    if (connectConditionMode) connectConditionMode.value = String(edge.condition?.mode || 'always');
+    const expression = edge.condition?.expression || {
+      left_path: String(edge.condition?.path || ''),
+      operator: 'truthy',
+      right_value: null,
+    };
+    if (conditionTemplate) conditionTemplate.value = 'custom';
+    setConditionEditorValues(expression);
+    renderConditionPreview(String(edge.condition?.mode || 'always'));
+    setEdgeEditStateText(`Editing edge #${index + 1}: ${edgeConditionSummary(edge.condition)}`);
+    if (connectBtn) connectBtn.textContent = 'Update Edge';
+  }
+
+  function renderEdges() {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    edgeLayer.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const defs = edgeLayer.querySelector('defs');
+    edgeLayer.innerHTML = '';
+    if (defs) edgeLayer.appendChild(defs);
+
+    state.edges.forEach((edge, index) => {
+      const from = state.nodes.find((node) => node.id === edge.from);
+      const to = state.nodes.find((node) => node.id === edge.to);
+      if (!from || !to) return;
+      const fromPoint = nodeCenter(from);
+      const toPoint = nodeCenter(to);
+
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.classList.add('wb-edge-group');
+      if (state.selectedEdgeIndex === index) {
+        group.classList.add('is-selected');
+      }
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(fromPoint.x));
+      line.setAttribute('y1', String(fromPoint.y));
+      line.setAttribute('x2', String(toPoint.x));
+      line.setAttribute('y2', String(toPoint.y));
+      line.setAttribute('marker-end', 'url(#wb-arrow)');
+      const mode = String(edge.condition?.mode || 'always');
+      if (mode === 'if_true') {
+        line.setAttribute('stroke', 'var(--color-success)');
+      } else if (mode === 'if_false') {
+        line.setAttribute('stroke', 'var(--color-warning)');
+        line.setAttribute('stroke-dasharray', '7 5');
+      }
+
+      const midX = (fromPoint.x + toPoint.x) / 2;
+      const midY = (fromPoint.y + toPoint.y) / 2;
+      const labelText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      labelText.setAttribute('x', String(midX));
+      labelText.setAttribute('y', String(midY - 8));
+      labelText.setAttribute('text-anchor', 'middle');
+      labelText.setAttribute('class', 'wb-edge-label');
+      labelText.textContent = edgeConditionSummary(edge.condition).toUpperCase();
+
+      group.appendChild(line);
+      group.appendChild(labelText);
+      group.addEventListener('click', () => {
+        selectEdge(index);
+        renderEdges();
+      });
+      edgeLayer.appendChild(group);
+    });
+  }
+
+  function renderNodeList() {
+    nodeTableBody.innerHTML = '';
+    state.nodes.forEach((node) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${node.key}</td>
+        <td>${node.preset ? (NODE_PRESETS[node.preset]?.title || node.type) : node.type}</td>
+        <td><button type="button" data-delete-node="${node.id}">Delete</button></td>
+      `;
+      tr.addEventListener('click', (event) => {
+        if (event.target instanceof HTMLElement && event.target.matches('[data-delete-node]')) {
+          return;
+        }
+        state.selectedId = node.id;
+        renderAll();
+      });
+      nodeTableBody.appendChild(tr);
+    });
+
+    nodeTableBody.querySelectorAll('[data-delete-node]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const nodeId = button.getAttribute('data-delete-node') || '';
+        state.nodes = state.nodes.filter((node) => node.id !== nodeId);
+        state.edges = state.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+        if (state.selectedId === nodeId) state.selectedId = null;
+        renderAll();
+      });
+    });
+  }
+
+  function renderEdgeList() {
+    edgeTableBody.innerHTML = '';
+    state.edges.forEach((edge, index) => {
+      const from = state.nodes.find((node) => node.id === edge.from);
+      const to = state.nodes.find((node) => node.id === edge.to);
+      const tr = document.createElement('tr');
+      if (state.selectedEdgeIndex === index) {
+        tr.classList.add('is-selected');
+      }
+      tr.innerHTML = `
+        <td>${from ? from.key : 'n/a'}</td>
+        <td>${to ? to.key : 'n/a'}</td>
+        <td>${edgeConditionSummary(edge.condition)}</td>
+        <td><button type="button" data-delete-edge="${index}">Delete</button></td>
+      `;
+      tr.addEventListener('click', (event) => {
+        if (event.target instanceof HTMLElement && event.target.matches('[data-delete-edge]')) {
+          return;
+        }
+        selectEdge(index);
+        renderEdges();
+      });
+      edgeTableBody.appendChild(tr);
+    });
+
+    edgeTableBody.querySelectorAll('[data-delete-edge]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number(button.getAttribute('data-delete-edge') || -1);
+        if (index < 0 || index >= state.edges.length) return;
+        state.edges.splice(index, 1);
+        if (state.selectedEdgeIndex === index) {
+          clearEdgeSelection();
+        } else if (state.selectedEdgeIndex !== null && state.selectedEdgeIndex > index) {
+          state.selectedEdgeIndex -= 1;
+        }
+        renderAll();
+      });
+    });
+  }
+
+  function renderConnectOptions() {
+    const options = state.nodes.map((node) => `<option value="${node.id}">${node.key}</option>`).join('');
+    connectFrom.innerHTML = options;
+    connectTo.innerHTML = options;
+    branchSource.innerHTML = options;
+
+    const selected = selectedNode();
+    if (selected) {
+      connectFrom.value = selected.id;
+      branchSource.value = selected.id;
+    }
+  }
+
+  function buildDefinition() {
+    return {
+      name: String(workflowNameInput?.value || '').trim(),
+      version: Number(workflowVersionInput?.value || 1),
+      timeout_seconds: Number(workflowTimeoutInput?.value || 600),
+      nodes: state.nodes.map((node) => ({
+        key: node.key,
+        name: node.name,
+        type: node.type,
+        timeout_seconds: Number(node.timeout_seconds || 30),
+        max_attempts: Number(node.max_attempts || 3),
+        priority: Number(node.priority || 100),
+        config: {
+          ...(node.config || {}),
+          _builder_preset: node.preset || null,
+        },
+      })),
+      edges: state.edges.map((edge) => {
+        const from = state.nodes.find((node) => node.id === edge.from);
+        const to = state.nodes.find((node) => node.id === edge.to);
+        const payload = {
+          from: from ? from.key : '',
+          to: to ? to.key : '',
+        };
+        if (edge.condition && edge.condition.mode && edge.condition.mode !== 'always') {
+          payload.condition = { mode: edge.condition.mode };
+          if (edge.condition.expression && typeof edge.condition.expression === 'object') {
+            payload.condition.expression = {
+              left_path: String(edge.condition.expression.left_path || ''),
+              operator: String(edge.condition.expression.operator || 'truthy'),
+            };
+            if (Object.prototype.hasOwnProperty.call(edge.condition.expression, 'right_value')) {
+              payload.condition.expression.right_value = edge.condition.expression.right_value;
+            }
+          } else if (edge.condition.path) {
+            payload.condition.path = edge.condition.path;
+          }
+        }
+        return payload;
+      }),
+    };
+  }
+
+  function validateDefinition(definition) {
+    const issues = [];
+    if (!definition.name) {
+      issues.push('Workflow name is required.');
+    }
+    if (!Array.isArray(definition.nodes) || definition.nodes.length === 0) {
+      issues.push('Add at least one node.');
+    }
+    const keys = new Set();
+    definition.nodes.forEach((node) => {
+      if (!node.key) issues.push('Node key cannot be empty.');
+      if (keys.has(node.key)) issues.push(`Duplicate node key: ${node.key}`);
+      keys.add(node.key);
+    });
+    definition.edges.forEach((edge) => {
+      if (!keys.has(edge.from)) issues.push(`Edge references unknown source: ${edge.from}`);
+      if (!keys.has(edge.to)) issues.push(`Edge references unknown target: ${edge.to}`);
+      if (edge.from === edge.to) issues.push(`Self-loop is not allowed: ${edge.from}`);
+      if (edge.condition) {
+        const mode = String(edge.condition.mode || '');
+        if (!['if_true', 'if_false'].includes(mode)) {
+          issues.push(`Unsupported condition mode on edge ${edge.from} -> ${edge.to}`);
+        }
+        const expression = edge.condition.expression;
+        if (!expression || typeof expression !== 'object') {
+          const legacyPath = String(edge.condition.path || '').trim();
+          if (legacyPath === '') {
+            issues.push(`Condition statement required for edge ${edge.from} -> ${edge.to}`);
+          }
+        } else {
+          const leftPath = String(expression.left_path || '').trim();
+          const operator = String(expression.operator || '').trim();
+          if (leftPath === '') {
+            issues.push(`Condition field path required for edge ${edge.from} -> ${edge.to}`);
+          }
+          const validOperators = ['truthy', 'equals', 'not_equals', 'contains', 'gt', 'gte', 'lt', 'lte', 'exists', 'empty'];
+          if (!validOperators.includes(operator)) {
+            issues.push(`Condition operator invalid on edge ${edge.from} -> ${edge.to}`);
+          }
+          if (operatorNeedsValue(operator) && !Object.prototype.hasOwnProperty.call(expression, 'right_value')) {
+            issues.push(`Condition compare value required for edge ${edge.from} -> ${edge.to}`);
+          }
+        }
+      }
+    });
+    return issues;
+  }
+
+  function renderValidation(issues) {
+    if (!validationOutput) return;
+    validationOutput.classList.remove('has-error', 'has-success');
+    if (issues.length === 0) {
+      validationOutput.classList.add('has-success');
+      validationOutput.textContent = 'Validation passed. The workflow graph is structurally sound.';
+      return;
+    }
+    validationOutput.classList.add('has-error');
+    validationOutput.textContent = issues.map((issue) => `- ${issue}`).join('\n');
+  }
+
+  function renderCanvasNodes() {
+    nodeLayer.innerHTML = '';
+    state.nodes.forEach((node) => {
+      const nodeEl = document.createElement('div');
+      nodeEl.className = `wb-node${node.id === state.selectedId ? ' is-selected' : ''}`;
+      nodeEl.style.left = `${node.x}px`;
+      nodeEl.style.top = `${node.y}px`;
+      nodeEl.dataset.nodeId = node.id;
+      nodeEl.innerHTML = `
+        <div class="wb-node-name">${node.name}</div>
+        <div class="wb-node-key">${node.key}</div>
+        <div class="wb-node-type">${NODE_PRESETS[node.preset]?.title || node.type}</div>
+      `;
+      nodeEl.addEventListener('mousedown', (event) => {
+        state.selectedId = node.id;
+        const rect = canvas.getBoundingClientRect();
+        state.drag = {
+          nodeId: node.id,
+          offsetX: event.clientX - rect.left - node.x,
+          offsetY: event.clientY - rect.top - node.y,
+        };
+        setCanvasState('Dragging node...');
+        renderAll();
+      });
+      nodeEl.addEventListener('click', () => {
+        state.selectedId = node.id;
+        connectFrom.value = node.id;
+        branchSource.value = node.id;
+        renderAll();
+      });
+      nodeLayer.appendChild(nodeEl);
+    });
+  }
+
+  function renderPreview() {
+    const definition = buildDefinition();
+    jsonPreview.textContent = JSON.stringify(definition, null, 2);
+  }
+
+  function renderAll() {
+    renderCanvasNodes();
+    renderEdges();
+    renderNodeList();
+    renderEdgeList();
+    renderConnectOptions();
+    updateInspector();
+    renderPreview();
+    if (!state.drag) setCanvasState('Ready');
+  }
+
+  function addEdge(fromId, toId, condition) {
+    if (!fromId || !toId || fromId === toId) {
+      window.JanusUI.showToast('Choose two different nodes to connect', 'error');
+      return;
+    }
+    const exists = state.edges.some((edge) => edge.from === fromId && edge.to === toId);
+    if (exists) {
+      window.JanusUI.showToast('Edge already exists', 'error');
+      return;
+    }
+    state.edges.push({ from: fromId, to: toId, condition });
+    renderAll();
+  }
+
+  function upsertSelectedEdge(fromId, toId, condition) {
+    if (!fromId || !toId || fromId === toId) {
+      window.JanusUI.showToast('Choose two different nodes to connect', 'error');
+      return;
+    }
+    if (state.selectedEdgeIndex === null) {
+      addEdge(fromId, toId, condition);
+      return;
+    }
+    const duplicate = state.edges.some((edge, index) => (
+      index !== state.selectedEdgeIndex && edge.from === fromId && edge.to === toId
+    ));
+    if (duplicate) {
+      window.JanusUI.showToast('Another edge already uses that from/to pair', 'error');
+      return;
+    }
+    state.edges[state.selectedEdgeIndex] = { from: fromId, to: toId, condition };
+    renderAll();
+    setEdgeEditStateText(`Updated edge #${state.selectedEdgeIndex + 1}`);
+  }
+
+  function buildEdgeConditionFromControls() {
+    const mode = String(connectConditionMode.value || 'always');
+    if (mode === 'always') {
+      return null;
+    }
+    const leftPath = String(conditionLeftPath.value || '').trim();
+    if (leftPath === '') {
+      throw new Error('Condition field path is required for if/else edges');
+    }
+    const operator = String(conditionOperator.value || 'truthy');
+    const expression = {
+      left_path: leftPath,
+      operator,
+    };
+    if (operatorNeedsValue(operator)) {
+      const rawValue = String(conditionRightValue.value || '').trim();
+      if (rawValue === '') {
+        throw new Error('Compare value is required for the selected operator');
+      }
+      expression.right_value = parseConditionValue(rawValue);
+    }
+    return { mode, expression };
+  }
+
+  function autoLayout() {
+    const columns = Math.max(1, Math.ceil(Math.sqrt(state.nodes.length)));
+    const spacingX = 230;
+    const spacingY = 130;
+    state.nodes.forEach((node, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      node.x = 60 + col * spacingX;
+      node.y = 60 + row * spacingY;
+    });
+    renderAll();
+    setCanvasState('Auto layout applied');
+  }
+
+  function downloadDefinition() {
+    const definition = buildDefinition();
+    const name = definition.name || 'workflow_definition';
+    const blob = new Blob([JSON.stringify(definition, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${name}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function loadDefinitionIntoBuilder(parsed, options = {}) {
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+      throw new Error('Invalid workflow JSON: missing nodes/edges arrays');
+    }
+    workflowNameInput.value = String(parsed.name || '');
+    workflowDescriptionInput.value = String(options.description || workflowDescriptionInput.value || '');
+    workflowVersionInput.value = String(Number(parsed.version || 1));
+    workflowTimeoutInput.value = String(Number(parsed.timeout_seconds || 600));
+
+    state.nodes = parsed.nodes.map((node, index) => ({
+      id: `n${index + 1}`,
+      key: String(node.key || `node_${index + 1}`),
+      name: String(node.name || `Node ${index + 1}`),
+      type: String(node.type || 'HTTP'),
+      preset: String((node.config || {})._builder_preset || '').trim() || null,
+      timeout_seconds: Number(node.timeout_seconds || 30),
+      max_attempts: Number(node.max_attempts || 3),
+      priority: Number(node.priority || 100),
+      config: typeof node.config === 'object' && node.config !== null ? node.config : {},
+      x: 80 + ((index * 46) % 520),
+      y: 70 + ((index * 60) % 280),
+    }));
+    state.idSeq = state.nodes.length + 1;
+
+    const idByKey = new Map(state.nodes.map((node) => [node.key, node.id]));
+    state.edges = parsed.edges.map((edge) => ({
+      from: idByKey.get(String(edge.from || '')) || '',
+      to: idByKey.get(String(edge.to || '')) || '',
+      condition: edge && typeof edge.condition === 'object' ? {
+        mode: String(edge.condition.mode || 'always'),
+        expression: edge.condition.expression && typeof edge.condition.expression === 'object'
+          ? {
+            left_path: String(edge.condition.expression.left_path || ''),
+            operator: String(edge.condition.expression.operator || 'truthy'),
+            ...(Object.prototype.hasOwnProperty.call(edge.condition.expression, 'right_value')
+              ? { right_value: edge.condition.expression.right_value }
+              : {}),
+          }
+          : null,
+        path: String(edge.condition.path || ''),
+      } : null,
+    })).filter((edge) => edge.from && edge.to);
+    state.selectedId = state.nodes[0]?.id || null;
+    state.selectedEdgeIndex = null;
+    clearEdgeSelection();
+    renderAll();
+
+    if (options.sourceName) {
+      setEditingNote(`Editing ${options.sourceName} v${options.sourceVersion || '?'} -> publish creates next immutable version`);
+    } else {
+      setEditingNote('New workflow draft');
+    }
+  }
+
+  function importDefinition(raw) {
+    const parsed = JSON.parse(raw);
+    loadDefinitionIntoBuilder(parsed);
+  }
+
+  async function loadExistingWorkflowList() {
+    try {
+      const rows = await api('/api/workflows?page=1&page_size=500&sort=name_asc');
+      existingWorkflowSelect.innerHTML = '<option value="">Select workflow</option>';
+      rows.forEach((row) => {
+        const option = document.createElement('option');
+        option.value = String(row.name || '');
+        option.textContent = `${row.name} (latest v${row.latest_version})`;
+        existingWorkflowSelect.appendChild(option);
+      });
+    } catch (error) {
+      existingWorkflowSelect.innerHTML = '<option value="">Unable to load workflows</option>';
+      window.JanusUI.showToast(error.message, 'error');
+    }
+  }
+
+  async function loadWorkflowVersionsByName(name) {
+    if (!name) {
+      existingVersionSelect.innerHTML = '<option value="">Select version</option>';
+      state.loadedWorkflowVersions = [];
+      return;
+    }
+
+    const versions = await api(`/api/workflows/by-name/${encodeURIComponent(name)}`);
+    state.loadedWorkflowVersions = Array.isArray(versions) ? versions : [];
+    existingVersionSelect.innerHTML = '';
+    state.loadedWorkflowVersions.forEach((version, index) => {
+      const option = document.createElement('option');
+      option.value = String(version.id || '');
+      option.textContent = `v${version.version} (id ${version.id})`;
+      existingVersionSelect.appendChild(option);
+      if (index === 0) option.selected = true;
+    });
+    if (state.loadedWorkflowVersions.length === 0) {
+      existingVersionSelect.innerHTML = '<option value="">No versions found</option>';
+    }
+  }
+
+  function selectedLoadedVersion() {
+    const id = String(existingVersionSelect.value || '');
+    return state.loadedWorkflowVersions.find((v) => String(v.id || '') === id) || null;
+  }
+
+  function loadSelectedExistingVersionIntoBuilder() {
+    const selected = selectedLoadedVersion();
+    if (!selected) {
+      window.JanusUI.showToast('Select a workflow version to load', 'error');
+      return;
+    }
+    const definition = selected.definition_json;
+    if (!definition || typeof definition !== 'object') {
+      window.JanusUI.showToast('Selected version has invalid definition JSON', 'error');
+      return;
+    }
+    loadDefinitionIntoBuilder(definition, {
+      sourceName: String(selected.name || existingWorkflowSelect.value || ''),
+      sourceVersion: Number(selected.version || 0),
+      description: String(selected.description || ''),
+    });
+    window.JanusUI.showToast('Workflow loaded into builder', 'success');
+  }
+
+  function addQuickBranch(mode) {
+    const sourceId = String(branchSource.value || connectFrom.value || state.selectedId || '');
+    const sourceNode = state.nodes.find((node) => node.id === sourceId);
+    if (!sourceNode) {
+      window.JanusUI.showToast('Select a source node first', 'error');
+      return;
+    }
+
+    const presetKey = String(branchTemplate.value || 'http_request');
+    const branchNode = addNode(presetKey, {
+      x: sourceNode.x + 250,
+      y: sourceNode.y + (mode === 'if_true' ? -90 : 90),
+    });
+
+    let condition;
+    try {
+      condition = {
+        mode,
+        expression: {
+          left_path: String(conditionLeftPath.value || '').trim(),
+          operator: String(conditionOperator.value || 'truthy'),
+        },
+      };
+      if (condition.expression.left_path === '') {
+        throw new Error('Condition field path is required');
+      }
+      if (operatorNeedsValue(condition.expression.operator)) {
+        const raw = String(conditionRightValue.value || '').trim();
+        if (raw === '') throw new Error('Compare value is required for this operator');
+        condition.expression.right_value = parseConditionValue(raw);
+      }
+    } catch (error) {
+      window.JanusUI.showToast(error.message, 'error');
+      return;
+    }
+
+    addEdge(sourceId, branchNode.id, condition);
+    connectFrom.value = sourceId;
+    connectTo.value = branchNode.id;
+    connectConditionMode.value = mode;
+    renderConditionPreview(mode);
+    setCanvasState(mode === 'if_true' ? 'Then branch added' : 'Else branch added');
+  }
+
+  document.addEventListener('mousemove', (event) => {
+    if (!state.drag) return;
+    const rect = canvas.getBoundingClientRect();
+    const node = state.nodes.find((item) => item.id === state.drag.nodeId);
+    if (!node) return;
+
+    const nextX = event.clientX - rect.left - state.drag.offsetX;
+    const nextY = event.clientY - rect.top - state.drag.offsetY;
+    node.x = Math.max(8, Math.min(rect.width - 192, nextX));
+    node.y = Math.max(8, Math.min(rect.height - 88, nextY));
+    renderCanvasNodes();
+    renderEdges();
+    renderPreview();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (state.drag) {
+      state.drag = null;
+      setCanvasState('Ready');
+    }
+  });
+
+  workspace.querySelectorAll('.wb-add-node-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      addNode(String(button.dataset.nodePreset || 'http_request'));
+    });
+  });
+
+  addThenBranchBtn.addEventListener('click', () => addQuickBranch('if_true'));
+  addElseBranchBtn.addEventListener('click', () => addQuickBranch('if_false'));
+
+  if (connectBtn) {
+    connectBtn.addEventListener('click', () => {
+      try {
+        upsertSelectedEdge(
+          String(connectFrom.value || ''),
+          String(connectTo.value || ''),
+          buildEdgeConditionFromControls(),
+        );
+      } catch (error) {
+        window.JanusUI.showToast(error.message, 'error');
+      }
+    });
+  }
+
+  connectConditionMode.addEventListener('change', () => {
+    updateConditionEditorVisibility();
+    renderConditionPreview();
+  });
+  conditionTemplate.addEventListener('change', () => {
+    applyConditionTemplateByKey(String(conditionTemplate.value || 'custom'));
+    renderConditionPreview();
+  });
+  conditionOperator.addEventListener('change', () => {
+    updateConditionEditorVisibility();
+    renderConditionPreview();
+  });
+  conditionLeftPath.addEventListener('input', () => renderConditionPreview());
+  conditionRightValue.addEventListener('input', () => renderConditionPreview());
+
+  if (edgeClearSelectionBtn) {
+    edgeClearSelectionBtn.addEventListener('click', () => {
+      clearEdgeSelection();
+      renderEdges();
+    });
+  }
+
+  existingWorkflowSelect.addEventListener('change', async () => {
+    try {
+      await loadWorkflowVersionsByName(String(existingWorkflowSelect.value || ''));
+    } catch (error) {
+      window.JanusUI.showToast(error.message, 'error');
+    }
+  });
+
+  loadExistingBtn.addEventListener('click', () => {
+    loadSelectedExistingVersionIntoBuilder();
+  });
+
+  const inspectorControls = [
+    nodeKeyInput,
+    nodeNameInput,
+    nodeTypeInput,
+    nodeTimeoutInput,
+    nodeAttemptsInput,
+    nodePriorityInput,
+    nodeConfigInput,
+  ].filter(Boolean);
+
+  inspectorControls.forEach((control) => {
+    control.addEventListener('input', () => {
+      const node = selectedNode();
+      if (!node) return;
+      try {
+        node.key = String(nodeKeyInput.value || '').trim();
+        node.name = String(nodeNameInput.value || '').trim();
+        node.type = String(nodeTypeInput.value || 'HTTP');
+        node.timeout_seconds = Math.max(1, Number(nodeTimeoutInput.value || 30));
+        node.max_attempts = Math.max(1, Number(nodeAttemptsInput.value || 3));
+        node.priority = Math.max(1, Number(nodePriorityInput.value || 100));
+        node.config = JSON.parse(nodeConfigInput.value || '{}');
+      } catch (_) {
+        // Keep editing permissive; validation will surface malformed JSON.
+      }
+      renderAll();
+    });
+  });
+
+  if (validateBtn) {
+    validateBtn.addEventListener('click', () => {
+      const definition = buildDefinition();
+      const issues = validateDefinition(definition);
+      renderValidation(issues);
+      if (issues.length === 0) {
+        window.JanusUI.showToast('Workflow validation passed', 'success');
+      }
+    });
+  }
+
+  if (autoLayoutBtn) {
+    autoLayoutBtn.addEventListener('click', autoLayout);
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', downloadDefinition);
+  }
+
+  if (importBtn && importInput) {
+    importBtn.addEventListener('click', () => {
+      importInput.focus();
+      window.JanusUI.showToast('Paste JSON in Import panel and click Apply', 'info');
+    });
+  }
+
+  if (applyImportBtn && importInput) {
+    applyImportBtn.addEventListener('click', () => {
+      try {
+        importDefinition(String(importInput.value || '').trim());
+        window.JanusUI.showToast('Workflow JSON imported', 'success');
+      } catch (error) {
+        window.JanusUI.showToast(error.message, 'error');
+      }
+    });
+  }
+
+  if (publishBtn) {
+    publishBtn.addEventListener('click', async () => {
+      try {
+        const definition = buildDefinition();
+        const issues = validateDefinition(definition);
+        renderValidation(issues);
+        if (issues.length > 0) {
+          window.JanusUI.showToast('Fix validation issues before publishing', 'error');
+          return;
+        }
+
+        await api('/api/workflows', 'POST', {
+          name: definition.name,
+          description: String(workflowDescriptionInput?.value || ''),
+          definition,
+        });
+        window.JanusUI.showToast('Workflow version published', 'success');
+      } catch (error) {
+        window.JanusUI.showToast(error.message, 'error');
+      }
+    });
+  }
+
+  canvas.addEventListener('keydown', (event) => {
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      const node = selectedNode();
+      if (!node) return;
+      state.nodes = state.nodes.filter((item) => item.id !== node.id);
+      state.edges = state.edges.filter((edge) => edge.from !== node.id && edge.to !== node.id);
+      state.selectedId = null;
+        branchSource.value = '';
+      renderAll();
+    }
+  });
+
+    loadExistingWorkflowList()
+      .then(async () => {
+        const params = new URLSearchParams(window.location.search);
+        const workflowParam = String(params.get('workflow') || '').trim();
+        const versionParam = String(params.get('version') || '').trim();
+        if (workflowParam !== '') {
+          existingWorkflowSelect.value = workflowParam;
+          await loadWorkflowVersionsByName(workflowParam);
+          if (versionParam !== '') {
+            const byVersion = state.loadedWorkflowVersions.find((item) => String(item.version) === versionParam);
+            const byId = state.loadedWorkflowVersions.find((item) => String(item.id) === versionParam);
+            const selected = byVersion || byId;
+            if (selected) {
+              existingVersionSelect.value = String(selected.id || '');
+              loadSelectedExistingVersionIntoBuilder();
+              return;
+            }
+          }
+        }
+
+        addNode('http_request');
+        addNode('python_script');
+        clearEdgeSelection();
+        renderConditionPreview();
+        autoLayout();
+      })
+      .catch(() => {
+        addNode('http_request');
+        addNode('python_script');
+        clearEdgeSelection();
+        renderConditionPreview();
+        autoLayout();
+      });
+}
+
 function bindKeyboardShortcuts() {
   document.addEventListener('keydown', (event) => {
     const target = event.target;
@@ -1275,6 +2416,7 @@ function init() {
   bindExecutionCancelButtons();
   bindTaskButtons();
   bindDeadLettersWorkspace();
+  bindWorkflowBuilder();
   bindKeyboardShortcuts();
 
   if (document.getElementById('execution-tasks-table')) {

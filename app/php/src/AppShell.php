@@ -10,6 +10,7 @@ final class AppShell
     {
         $items = [
             ['label' => 'Workflows', 'href' => '/'],
+            ['label' => 'Workflow Builder', 'href' => '/workflows/builder', 'subpage' => true],
             ['label' => 'Executions', 'href' => '/executions'],
             ['label' => 'Dead Letters', 'href' => '/dead-letters'],
             ['label' => 'Observability', 'href' => '/observability'],
